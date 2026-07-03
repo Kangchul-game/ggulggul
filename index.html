@@ -453,6 +453,7 @@ canvas.chart{width:100%;height:190px;display:block;margin-top:10px}
     <p class="ov-desc">전원이 장을 마감하면 다음 날이 열립니다. 마감한 사람의 현재 자산이 먼저 공개됩니다.</p>
     <div class="plist" id="waitList"></div>
     <div class="wait-pulse">WAITING FOR TRADERS···</div>
+    <div class="wait-pulse" id="advCount" style="display:none;color:var(--amber);animation:none"></div>
     <h2 style="margin-top:26px">💬 마감자 채팅</h2>
     <div class="chat-box">
       <div class="chat-log" id="chatList"></div>
@@ -475,7 +476,19 @@ canvas.chart{width:100%;height:190px;display:block;margin-top:10px}
     <h2>종목 실명 공개</h2>
     <div id="rList"></div>
     <div class="notice"><b>다시 한 번:</b> 일 단위 시세는 실제 역사적 앵커 사이를 통계적으로 재구성한 근사치이며, 실제 당시 종가와 다를 수 있습니다.</div>
-    <button class="next" onclick="location.search ? location.href=location.pathname : resetToHome()">홈으로</button>
+    <div id="resultChatWrap" style="display:none">
+      <h2>💬 정산 라운지</h2>
+      <div class="chat-box">
+        <div class="chat-log" id="resultChatList"></div>
+        <div class="chat-in">
+          <input id="resultChatInput" maxlength="120" placeholder="결과 감상 · 리매치 도발 환영">
+          <button onclick="sendChat('resultChatInput')">전송</button>
+        </div>
+      </div>
+      <button class="next" id="btnRematch" style="display:none" onclick="hostRestart()">같은 멤버로 한 판 더 ⚔</button>
+      <div class="room-sub" id="rematchHint" style="display:none;margin:10px 0 2px">방장이 재경기를 시작하면 자동으로 로비로 이동합니다</div>
+    </div>
+    <button class="ghost" onclick="exitAfterGame()">방 나가기 · 홈으로</button>
   </div>
 </div>
 
@@ -925,7 +938,7 @@ function enterRoom(code, isHost, nick){
   show('sLobby');
 }
 function leaveRoom(){
-  stopDayTimer();
+  stopDayTimer(); cancelAdvance();
   if (roomRef){ roomRef.off(); if (ROOM && lastRoom && lastRoom.state.phase==='lobby') db.ref(`rooms/${ROOM.code}/players/${PID}`).remove(); }
   store.del('stm_room'); ROOM=null; roomRef=null; lastRoom=null; G=null;
   resetToHome();
@@ -995,15 +1008,13 @@ function onRoom(room){
   if (ROOM && (!room.players || !room.players[PID])) return kickedOut();   // 강퇴 감지
   lastRoom = room;
   const ph = room.state.phase;
-  if (ph === 'lobby'){ renderLobby(room); return; }
+  if (ph === 'lobby'){
+    if (G){ G = null; stopDayTimer(); hideRecap(); cancelAdvance(); }   // 재경기: 이전 판 상태 정리
+    renderLobby(room);
+    if (!document.getElementById('sLobby').classList.contains('show')) show('sLobby');
+    return;
+  }
   if (ph === 'playing'){
-    // 정산 판정을 데이터 기준으로: 전원이 마지막 날 마감을 기록했으면 done 신호를 기다리지 않고 결과 표시
-    const ps = Object.values(room.players||{});
-    if (G && ps.length && ps.every(p => (p.doneDay||0) >= room.cfg.days)){
-      maybeAdvance(room);          // 다른 참가자를 위해 서버에도 done 기록 시도
-      showResult(room);
-      return;
-    }
     if (!G){                                        // 시작(또는 재입장) 신호: 시드로 전원 동일 재현 후 게임 화면 진입
       beginGame(room.cfg.seed, room.cfg.days, room.cfg.cash, room.cfg.steel, room.cfg.lev, room.cfg.short, room.cfg.tlimit);
       G.day = room.state.day;                       // 재입장자는 현재 진행일로 점프
@@ -1024,6 +1035,7 @@ function onRoom(room){
       return;
     }
     if (room.state.day > G.day){                                       // 다음 날 열림
+      cancelAdvance();
       G.day = room.state.day; G.submitted = false;
       show('sGame');
       showRecap();                     // 개장 브리핑 (청산 전 상태로 손익 공개)
@@ -1041,25 +1053,57 @@ function onRoom(room){
     maybeAdvance(room);
     return;
   }
-  if (ph === 'done'){ if (!G) beginGame(room.cfg.seed, room.cfg.days, room.cfg.cash, room.cfg.steel, room.cfg.lev, room.cfg.short); showResult(room); }
+  if (ph === 'done'){
+    if (!G) beginGame(room.cfg.seed, room.cfg.days, room.cfg.cash, room.cfg.steel, room.cfg.lev, room.cfg.short);
+    if (document.getElementById('sResult').classList.contains('show')){
+      renderChat(room); updateRematchUI(room);   // 라운지 갱신만 (스크롤 유지)
+      return;
+    }
+    showResult(room);
+  }
 }
 
-// 전원 마감 확인 → 다음 날 (누가 실행해도 같은 결과가 나오는 안전한 전진)
+// 전원 마감 확인 → 10초 유예(마지막 마감자 채팅 시간) 후 다음 날/정산 전진
+let advTimer = null, advTick = null, advForDay = 0;
+function cancelAdvance(){
+  clearTimeout(advTimer); clearInterval(advTick);
+  advTimer = advTick = null; advForDay = 0;
+  const el = document.getElementById('advCount');
+  if (el) el.style.display = 'none';
+}
 function maybeAdvance(room){
   const d = room.state.day;
   const players = Object.values(room.players||{});
   if (!d || !players.length || !players.every(p => (p.doneDay||0) >= d)) return;
-  if (d >= room.cfg.days){
-    db.ref(`rooms/${ROOM.code}/state/phase`).transaction(cur => {
-      if (cur === null || cur === 'playing') return 'done';  // 캐시 없으면 서버 검증에 맡기고 시도
-      return;                                                 // 이미 done: 아무것도 쓰지 않고 중단
-    });
-  } else {
-    db.ref(`rooms/${ROOM.code}/state/day`).transaction(cur => {
-      if (cur === null || cur === d) return d + 1;            // 정상 전진 (null이면 서버가 실제값으로 재검증)
-      return;                                                 // 이미 전진됨: 중단 — 절대 null을 쓰지 않음
-    });
-  }
+  if (advForDay === d) return;                               // 이미 이 날짜로 유예 진행 중
+  advForDay = d;
+  const isFinal = d >= room.cfg.days;
+  const deadline = Date.now() + 10000;
+  const el = document.getElementById('advCount');
+  clearInterval(advTick);
+  const tick = () => {
+    const left = Math.ceil((deadline - Date.now())/1000);
+    if (el){ el.style.display = 'block';
+      el.textContent = `⏳ 전원 마감! ${isFinal ? '정산' : '다음 날 개장'}까지 ${Math.max(0,left)}초`; }
+    if (left <= 0) clearInterval(advTick);
+  };
+  tick(); advTick = setInterval(tick, 500);
+  clearTimeout(advTimer);
+  advTimer = setTimeout(() => {
+    advForDay = 0;                                           // 전진 실패 시 다음 이벤트에서 재시도 가능
+    if (el) el.style.display = 'none';
+    if (isFinal){
+      db.ref(`rooms/${ROOM.code}/state/phase`).transaction(cur => {
+        if (cur === null || cur === 'playing') return 'done';
+        return;
+      });
+    } else {
+      db.ref(`rooms/${ROOM.code}/state/day`).transaction(cur => {
+        if (cur === null || cur === d) return d + 1;
+        return;
+      });
+    }
+  }, 10000);
 }
 
 function renderWait(room){
@@ -1354,7 +1398,7 @@ function kickPlayer(pid){
 }
 function kickedOut(){
   if (roomRef){ roomRef.off(); roomRef = null; }
-  stopDayTimer(); hideRecap();
+  stopDayTimer(); hideRecap(); cancelAdvance();
   store.del('stm_room'); ROOM = null; lastRoom = null; G = null;
   toast('방장에 의해 퇴장되었습니다');
   resetToHome();
@@ -1387,8 +1431,10 @@ function sendChat(srcId){
   const msg = el.value.trim();
   if (!msg || !ROOM || !db) return;
   const inLobby = lastRoom && lastRoom.state && lastRoom.state.phase === 'lobby';
-  if (!inLobby && (!G || !G.submitted)) return toast('오늘 장을 마감해야 채팅할 수 있습니다');
-  db.ref(`rooms/${ROOM.code}/chat`).push({ pid: PID, name: ROOM.nick, msg, day: inLobby ? 0 : G.day, ts: Date.now() })
+  const inDone  = lastRoom && lastRoom.state && lastRoom.state.phase === 'done';
+  if (!inLobby && !inDone && (!G || !G.submitted)) return toast('오늘 장을 마감해야 채팅할 수 있습니다');
+  db.ref(`rooms/${ROOM.code}/chat`).push({ pid: PID, name: ROOM.nick, msg,
+    day: inLobby ? 0 : (G ? G.day : 0), end: inDone ? 1 : 0, ts: Date.now() })
     .catch(()=>toast('전송 실패 — 다시 시도해 주세요'));
   el.value = '';
 }
@@ -1396,9 +1442,9 @@ function renderChat(room){
   const msgs = Object.values(room.chat||{})
     .sort((a,b) => (a.ts||0)-(b.ts||0)).slice(-80);          // 로비부터 게임 끝까지 유지 (새 방이면 자동 리셋)
   const body = msgs.length
-    ? msgs.map(m => `<div class="chat-msg ${m.pid===PID?'mine':''}"><span class="cd">${m.day ? 'D'+m.day : '로비'}</span><span class="cn">${esc(m.name)}</span>${esc(m.msg)}</div>`).join('')
+    ? msgs.map(m => `<div class="chat-msg ${m.pid===PID?'mine':''}"><span class="cd">${m.end ? '정산' : (m.day ? 'D'+m.day : '로비')}</span><span class="cn">${esc(m.name)}</span>${esc(m.msg)}</div>`).join('')
     : '<div class="chat-empty">아직 메시지가 없습니다 — 첫 메시지를 남겨보세요</div>';
-  for (const id of ['chatList','lobbyChatList']){
+  for (const id of ['chatList','lobbyChatList','resultChatList']){
     const el = document.getElementById(id);
     if (!el) continue;
     el.innerHTML = body;
@@ -1525,7 +1571,7 @@ function hideRecap(){ clearInterval(recapTimer); document.getElementById('recapO
    10) 정산 — 순위 + 실명·날짜 공개
    ════════════════════════════════════════════ */
 function showResult(room){
-  hideRecap(); stopDayTimer();
+  hideRecap(); stopDayTimer(); cancelAdvance();
   const endIdx = G.t0 + G.days - 1;
   const tot = totalAssets(), diff = tot - G.cash0, pct = diff/G.cash0*100;
   const d0 = DATES[G.t0], d1 = DATES[endIdx];
@@ -1568,9 +1614,43 @@ function showResult(room){
       <div class="rv-sub"><span>${fmt(s)} → ${fmt(e)}</span>
         <span>${p.q?`${p.q<0?'숏 '+(-p.q):'보유 '+p.q}주 · ${signed(pnl,true)}`:'미보유'}</span></div></div>`;
   }).join('');
-  if (roomRef){ roomRef.off(); roomRef=null; }
-  store.del('stm_room');
+  // 방 유지: 대결이면 연결을 끊지 않고 라운지(채팅·재경기)를 켠 채 머무름
+  const battle = MODE === 'battle' && !!room;
+  document.getElementById('resultChatWrap').style.display = battle ? 'block' : 'none';
+  if (battle){ updateRematchUI(room); renderChat(room); }
+  else { if (roomRef){ roomRef.off(); roomRef = null; } store.del('stm_room'); }
   show('sResult');
+}
+
+/* ── 정산 라운지: 재경기 · 퇴장 ── */
+function updateRematchUI(room){
+  const isHost = room && room.host === PID;
+  document.getElementById('btnRematch').style.display = isHost ? 'block' : 'none';
+  document.getElementById('rematchHint').style.display = (room && !isHost) ? 'block' : 'none';
+}
+function hostRestart(){
+  if (!ROOM || !lastRoom || lastRoom.host !== PID) return;
+  const cash = lastRoom.cfg.cash;
+  const up = {
+    'cfg/seed': (Math.random()*2**31)|0,           // 새 시드 = 새 종목·새 시세·새 가명
+    'state': { phase: 'lobby', day: 0 },
+    'chat': null                                   // 새 게임이므로 채팅 리셋
+  };
+  Object.keys(lastRoom.players||{}).forEach(pid => {
+    up[`players/${pid}/doneDay`] = 0;
+    up[`players/${pid}/total`] = cash;
+    up[`players/${pid}/cash`] = cash;
+    up[`players/${pid}/pos`] = null;
+    up[`players/${pid}/bankrupt`] = false;
+  });
+  db.ref('rooms/'+ROOM.code).update(up)
+    .then(()=>toast('재경기! 전원 로비로 이동합니다 ⚔'))
+    .catch(()=>toast('재경기 시작 실패 — 다시 시도'));
+}
+function exitAfterGame(){
+  if (MODE === 'battle' && ROOM) leaveRoom();
+  else if (location.search) location.href = location.pathname;
+  else resetToHome();
 }
 
 /* ════════════════════════════════════════════
