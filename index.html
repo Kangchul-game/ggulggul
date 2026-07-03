@@ -1,0 +1,1624 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>주식 타임머신 — 대결전</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<style>
+:root{
+  --ink:#0a0d13; --panel:#12161f; --panel2:#181d29; --line:#232a3a;
+  --txt:#e9edf5; --dim:#8b94a7;
+  --up:#ff4d57; --dn:#4d7cff; --amber:#f5b94a;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --sans:'IBM Plex Sans KR',-apple-system,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--ink);color:var(--txt);font-family:var(--sans)}
+body{max-width:520px;margin:0 auto;min-height:100vh}
+button{font-family:inherit;cursor:pointer;border:none}
+input,select{font-family:inherit}
+.screen{display:none;padding-bottom:110px}
+.screen.show{display:block}
+.pos{color:var(--up)} .neg{color:var(--dn)} .flat{color:var(--dim)}
+
+/* ── 공용 요소 ── */
+.ov-inner{padding:36px 24px 60px}
+.ov-eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.25em;color:var(--amber)}
+h1{font-size:28px;line-height:1.3;margin:12px 0 10px;font-weight:700}
+h1 .amber{color:var(--amber)}
+h2{font-size:16px;margin:24px 0 10px}
+.ov-desc{font-size:13.5px;color:var(--dim);line-height:1.75}
+.notice{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:10px;padding:13px 14px;font-size:12px;color:var(--dim);line-height:1.7;margin:16px 0}
+.notice b{color:var(--txt)}
+.next{width:100%;background:var(--amber);color:#1a1408;border-radius:12px;padding:15px 0;font-size:15.5px;font-weight:700;letter-spacing:.02em;margin-top:10px}
+.next:active{transform:scale(.985)}
+.next:disabled{opacity:.4}
+.ghost{width:100%;background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:12px;padding:14px 0;font-size:14.5px;font-weight:500;margin-top:10px}
+.back{background:none;color:var(--dim);font-size:13px;padding:8px 0;margin-bottom:6px}
+.field{margin:14px 0}
+.field label{display:block;font-size:12px;color:var(--dim);margin-bottom:7px;letter-spacing:.05em}
+.field input,.field textarea{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--txt);padding:13px;font-size:15px;outline:none}
+.field input:focus,.field textarea:focus{border-color:var(--amber)}
+.field textarea{font-family:var(--mono);font-size:11.5px;min-height:150px;resize:vertical}
+.seg{display:flex;gap:7px;flex-wrap:wrap}
+.seg button{flex:1;min-width:70px;background:var(--panel);border:1px solid var(--line);color:var(--dim);border-radius:10px;padding:12px 0;font-size:13.5px;font-weight:500}
+.seg button.on{border-color:var(--amber);color:var(--txt);background:var(--panel2)}
+.code-input{font-family:var(--mono)!important;font-size:22px!important;text-align:center;letter-spacing:.35em;text-transform:uppercase}
+
+/* ── 전광판 헤더 ── */
+.board{background:linear-gradient(#0d1017,#0a0d13);border-bottom:1px solid var(--line);padding:14px 16px 12px;position:sticky;top:0;z-index:20}
+.board-top{display:flex;justify-content:space-between;align-items:baseline}
+.brand{font-family:var(--mono);font-size:11px;letter-spacing:.22em;color:var(--amber)}
+.brand::after{content:'▮';animation:blink 1.1s steps(1) infinite;margin-left:2px}
+@keyframes blink{50%{opacity:0}}
+.day-lamps{display:flex;gap:4px;margin-top:10px}
+.lamp{flex:1;height:5px;border-radius:2px;background:#1c2230;transition:background .4s}
+.lamp.on{background:var(--amber);box-shadow:0 0 6px rgba(245,185,74,.55)}
+.board-total{display:flex;justify-content:space-between;align-items:flex-end;margin-top:10px}
+.board-total .lbl{font-size:11px;color:var(--dim);letter-spacing:.1em}
+.board-total .val{font-family:var(--mono);font-size:24px;font-weight:700}
+.board-total .sub{font-family:var(--mono);font-size:13px;text-align:right}
+
+/* ── 게임 카드류 ── */
+.tabs{display:flex;gap:6px;overflow-x:auto;padding:12px 16px 4px;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:0 0 auto;background:var(--panel);border:1px solid var(--line);color:var(--dim);padding:8px 12px;border-radius:10px;font-size:12.5px;font-weight:500;display:flex;flex-direction:column;gap:2px;min-width:92px;text-align:left}
+.tab .t-chg{font-family:var(--mono);font-size:11px}
+.tab.active{border-color:var(--amber);color:var(--txt);background:var(--panel2)}
+.tab .hold-dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--amber);margin-left:4px;vertical-align:2px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin:10px 16px;padding:14px}
+.quote{display:flex;justify-content:space-between;align-items:flex-start}
+.quote .name{font-size:15px;font-weight:700}
+.quote .cat{font-size:11px;color:var(--dim);margin-top:2px}
+.quote .px{font-family:var(--mono);font-size:22px;font-weight:700;text-align:right}
+.quote .chg{font-family:var(--mono);font-size:12.5px;text-align:right;margin-top:2px}
+.flash-up{animation:fup .7s} .flash-dn{animation:fdn .7s}
+@keyframes fup{0%{color:var(--up);text-shadow:0 0 12px rgba(255,77,87,.6)}}
+@keyframes fdn{0%{color:var(--dn);text-shadow:0 0 12px rgba(77,124,255,.6)}}
+canvas.chart{width:100%;height:190px;display:block;margin-top:10px}
+.chart-note{font-size:10.5px;color:var(--dim);margin-top:6px;text-align:right}
+.row{display:flex;justify-content:space-between;font-size:13px;padding:5px 0}
+.row .k{color:var(--dim)} .row .v{font-family:var(--mono)}
+.order{display:flex;gap:8px;margin-top:10px}
+.qty-box{flex:1;display:flex;align-items:center;background:var(--ink);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.qty-box input{flex:1;width:40px;background:none;border:none;color:var(--txt);font-family:var(--mono);font-size:16px;text-align:center;padding:10px 0;outline:none}
+.qty-btn{background:none;color:var(--dim);font-size:18px;padding:10px 14px}
+.quick{display:flex;gap:6px;margin-top:8px}
+.quick button{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--dim);border-radius:8px;padding:7px 0;font-size:11.5px}
+.quick button.on{border-color:var(--amber);color:var(--amber);font-weight:700}
+.trade{display:flex;gap:8px;margin-top:10px}
+.trade button{flex:1;border-radius:10px;padding:13px 0;font-size:14.5px;font-weight:700;color:#fff}
+.btn-buy{background:var(--up)} .btn-sell{background:var(--dn)}
+.trade button:disabled{opacity:.35}
+.footer{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:520px;background:linear-gradient(transparent,var(--ink) 30%);padding:18px 16px 20px;z-index:30}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:120px;background:#000c;border:1px solid var(--line);padding:9px 16px;border-radius:20px;font-size:12.5px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:200;white-space:nowrap}
+.toast.show{opacity:1}
+
+/* ── 로비 / 대기 / 순위 ── */
+.room-code{font-family:var(--mono);font-size:38px;font-weight:700;letter-spacing:.3em;text-align:center;color:var(--amber);margin:14px 0 4px}
+.room-sub{text-align:center;font-size:12px;color:var(--dim)}
+.plist{margin:16px 0}
+.pl{display:flex;justify-content:space-between;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:12px 14px;margin:7px 0;font-size:14px}
+.pl .who{display:flex;align-items:center;gap:9px}
+.pl .dot{width:8px;height:8px;border-radius:50%;background:var(--amber)}
+.pl .dot.wait{background:#3a4256;box-shadow:none}
+.pl .stat{font-family:var(--mono);font-size:12.5px}
+.pl.me{border-color:var(--amber)}
+.crown{font-size:16px}
+.wait-pulse{font-family:var(--mono);text-align:center;color:var(--dim);font-size:12px;letter-spacing:.2em;margin:20px 0;animation:pulse 1.6s infinite}
+@keyframes pulse{50%{opacity:.35}}
+.rank{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin:8px 0}
+.rank.first{border-color:var(--amber);background:linear-gradient(90deg,rgba(245,185,74,.09),var(--panel))}
+.rank .no{font-family:var(--mono);font-size:15px;color:var(--dim);width:26px;text-align:center}
+.rank .nm{flex:1;font-size:14.5px;font-weight:700}
+.rank .pf{font-family:var(--mono);font-size:15px;font-weight:700;text-align:right}
+.rank .amt{font-family:var(--mono);font-size:11px;color:var(--dim);text-align:right}
+.result-total{text-align:center;margin:26px 0}
+.result-total .big{font-family:var(--mono);font-size:40px;font-weight:700}
+.result-total .cap{font-size:12px;color:var(--dim);margin-top:6px}
+.rv-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 14px;margin:8px 0}
+.rv-head{display:flex;justify-content:space-between;font-size:13.5px;font-weight:700}
+.rv-real{font-size:11px;color:var(--amber);margin-top:3px}
+.rv-sub{display:flex;justify-content:space-between;font-size:11.5px;color:var(--dim);margin-top:5px;font-family:var(--mono)}
+.rv-perf{font-family:var(--mono);font-size:12.5px}
+.guide-step{display:flex;gap:13px;padding:13px 0;border-bottom:1px solid var(--line);font-size:13px;line-height:1.7}
+.guide-step .no{font-family:var(--mono);color:var(--amber);font-size:12px;padding-top:2px;flex-shrink:0}
+.guide-step code{font-family:var(--mono);background:var(--panel2);padding:1px 6px;border-radius:5px;font-size:11.5px;color:var(--amber)}
+.rules{margin:18px 0;border-top:1px solid var(--line)}
+
+/* ── 주문 슬라이더 · 개장 브리핑 · 당시 소문 ── */
+.qnews{margin-top:10px;background:var(--ink);border:1px dashed var(--line);border-radius:9px;padding:9px 11px;font-size:11.5px;color:var(--dim);line-height:1.5}
+.slider-wrap{margin-top:12px}
+.slider-wrap input[type=range]{width:100%;accent-color:var(--amber);height:30px}
+.slider-cap{display:flex;justify-content:space-between;align-items:baseline;font-size:10.5px;color:var(--dim);margin-top:2px}
+.slider-cap #pctLabel{font-family:var(--mono);font-size:15px;color:var(--amber);font-weight:700}
+#recapOv{display:none;position:fixed;inset:0;background:rgba(6,8,12,.96);z-index:150;align-items:center;justify-content:center}
+#recapOv.show{display:flex}
+.recap-box{width:min(420px,88vw)}
+.recap-title{font-family:var(--mono);font-size:13px;letter-spacing:.25em;color:var(--amber);text-align:center;margin-bottom:16px}
+.recap-row{display:flex;justify-content:space-between;padding:10px 4px;border-bottom:1px solid var(--line);font-size:14px}
+.recap-row .rv{font-family:var(--mono);font-weight:700}
+.recap-total{text-align:center;font-family:var(--mono);font-size:15px;margin-top:16px}
+.recap-skip{text-align:center;font-size:11px;color:var(--dim);margin-top:14px;letter-spacing:.1em}
+.join-link{display:block;width:100%;background:var(--panel);border:1px dashed var(--amber);color:var(--amber);
+  border-radius:11px;padding:12px 14px;margin:10px 0 4px;font-family:var(--mono);font-size:11.5px;
+  line-height:1.5;word-break:break-all;text-align:center}
+.join-link:active{background:var(--panel2);transform:scale(.99)}
+.rank-strip{display:flex;gap:6px;overflow-x:auto;margin-top:9px;scrollbar-width:none}
+.rank-strip::-webkit-scrollbar{display:none}
+.rk{flex:0 0 auto;font-size:11px;color:var(--dim);background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:4px 10px;white-space:nowrap}
+.rk.top{color:var(--amber);border-color:var(--amber)}
+.rk.me{color:var(--txt);background:var(--panel2);font-weight:700}
+.chat-box{margin-top:20px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px}
+.chat-log{max-height:190px;overflow-y:auto;font-size:12.5px;line-height:1.65;padding:2px 4px}
+.chat-log .chat-msg{margin:4px 0;word-break:break-all}
+.chat-msg .cn{color:var(--amber);font-weight:700;margin-right:6px}
+.chat-msg .cd{color:var(--dim);font-family:var(--mono);font-size:9.5px;margin-right:5px}
+.kick-btn{background:none;border:1px solid var(--line);color:var(--dim);border-radius:7px;width:26px;height:26px;font-size:12px;line-height:1}
+.kick-btn:active{border-color:var(--up);color:var(--up)}
+.chat-msg.mine .cn{color:var(--txt)}
+.chat-empty{color:var(--dim);font-size:11.5px;padding:6px 0}
+.chat-in{display:flex;gap:7px;margin-top:9px}
+.chat-in input{flex:1;background:var(--ink);border:1px solid var(--line);border-radius:9px;color:var(--txt);padding:10px 12px;font-size:13px;outline:none}
+.chat-in input:focus{border-color:var(--amber)}
+.chat-in button{background:var(--amber);color:#1a1408;border-radius:9px;padding:0 16px;font-weight:700}
+/* ── 화면 투어 ── */
+#tourOv{position:fixed;inset:0;z-index:300}
+#tourHole{position:fixed;border-radius:14px;border:1.5px solid var(--amber);
+  box-shadow:0 0 0 9999px rgba(4,6,10,.84), 0 0 18px rgba(245,185,74,.35);
+  transition:all .45s cubic-bezier(.4,0,.2,1);pointer-events:none}
+#tourTip{position:fixed;left:16px;right:16px;max-width:488px;margin:0 auto;background:var(--panel);
+  border:1px solid var(--amber);border-radius:14px;padding:15px 16px;z-index:301;pointer-events:none;
+  transition:top .45s cubic-bezier(.4,0,.2,1), bottom .45s cubic-bezier(.4,0,.2,1)}
+.tt-step{font-family:var(--mono);font-size:10px;color:var(--amber);letter-spacing:.2em;margin-bottom:6px}
+.tt-title{font-size:15px;font-weight:700;margin-bottom:6px}
+.tt-text{font-size:12.5px;color:var(--dim);line-height:1.7}
+.tt-tap{margin-top:10px;font-size:10.5px;color:var(--amber);letter-spacing:.08em;text-align:right;animation:pulse 1.6s infinite}
+.chat-list{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;max-height:230px;overflow-y:auto;font-size:13px;min-height:60px}
+.chat-msg{padding:5px 0;line-height:1.5;word-break:break-all}
+.chat-msg .cn{color:var(--dim);font-size:11.5px;margin-right:7px}
+.chat-msg.mine .cn{color:var(--amber)}
+.chat-empty{color:var(--dim);font-size:12px;text-align:center;padding:14px 0}
+.chat-row{display:flex;gap:8px;margin-top:10px}
+.chat-row input{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--txt);padding:12px;font-size:14px;outline:none}
+.chat-row input:focus{border-color:var(--amber)}
+.chat-send{background:var(--amber);color:#1a1408;border-radius:10px;padding:0 18px;font-size:13.5px;font-weight:700}
+</style>
+</head>
+<body>
+
+<!-- ══════════ 홈 ══════════ -->
+<div class="screen show" id="sHome">
+  <div class="ov-inner">
+    <div class="ov-eyebrow">STOCK TIME MACHINE · BATTLE</div>
+    <h1>과거의 어느 날로 떨어진<br><span class="amber">트레이더들의 생존 대결</span></h1>
+    <p class="ov-desc">1998–2025년 사이 무작위 시점, 정체를 숨긴 종목 7개(주식 4·코인 3). 같은 차트를 보고 누가 더 버는지 겨룹니다. 날짜와 실명은 정산 때 공개됩니다.</p>
+    <div style="margin-top:26px">
+      <button class="next" onclick="goSetup('battle-host')">⚔ 대결 방 만들기</button>
+      <button class="ghost" onclick="goSetup('battle-join')">🔑 코드로 참가하기</button>
+      <button class="ghost" onclick="goSetup('solo')">🕹 혼자 연습하기</button>
+      <button class="ghost" id="btnResume" style="display:none" onclick="resumeRoom()">↻ 진행 중이던 방으로 복귀</button>
+    </div>
+    <div class="notice"><b>데이터 안내</b> — 종목의 큰 흐름(폭락·랠리)은 실제 역사적 가격 지점을 따르되, 일 단위 시세는 실제 변동성 수준으로 재구성한 <b>근사치</b>입니다. 종목 가명은 판마다 무작위로 바뀌며 실명은 정산 때 공개됩니다. 미국 주식 환율 1,300원 고정, 코인은 소수점 수량을 1주로 환산(단위는 종목 설명에 표기)하며 주말 거래는 생략합니다. 수수료 없음.</div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="ghost" style="flex:1;margin-top:0" onclick="show('sTutorial')">📖 튜토리얼</button>
+      <button class="ghost" style="flex:1;margin-top:0" onclick="show('sFbGuide')">⚙ 서버 설정</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ Firebase 설정 가이드 ══════════ -->
+<div class="screen" id="sFbGuide">
+  <div class="ov-inner">
+    <button class="back" onclick="show('sHome')">← 홈으로</button>
+    <div class="ov-eyebrow">SETUP</div>
+    <h1>대결 서버 연결하기</h1>
+    <p class="ov-desc">대결 모드는 참가자들의 데이터를 주고받을 서버가 필요합니다. 구글 Firebase 무료 플랜이면 충분하며, 설정은 한 번만 하면 됩니다 (약 10분).</p>
+    <h2>1단계 — Firebase 프로젝트 만들기</h2>
+    <div class="guide-step"><span class="no">01</span><span><code>console.firebase.google.com</code> 접속 → 구글 로그인 → <b>프로젝트 만들기</b> (이름 자유, 애널리틱스는 꺼도 됨)</span></div>
+    <div class="guide-step"><span class="no">02</span><span>왼쪽 메뉴 <b>Databases &amp; Storage → Realtime Database</b> (안 보이면 상단 검색창에 <code>Realtime Database</code> 입력, 또는 <code>console.firebase.google.com/project/_/database</code> 직접 접속) → <b>데이터베이스 만들기</b> → 위치 <code>asia-southeast1</code> → <b>테스트 모드</b>로 시작</span></div>
+    <div class="guide-step"><span class="no">03</span><span>테스트 모드는 30일 후 잠기므로, Database의 <b>규칙</b> 탭에서 아래로 교체 후 <b>게시</b>:<br><code>{"rules":{"rooms":{".read":true,".write":true}}}</code><br><span style="color:var(--dim)">⚠ 이 규칙은 누구나 rooms에 쓸 수 있는 공개 설정입니다. 이 게임 전용 프로젝트로만 쓰세요.</span></span></div>
+    <div class="guide-step"><span class="no">04</span><span>⚙ <b>프로젝트 설정 → 내 앱 → 웹(&lt;/&gt;) 앱 추가</b> → 앱 등록 → 화면에 나오는 <code>firebaseConfig = { ... }</code> 코드 전체를 복사</span></div>
+    <h2>2단계 — 아래에 붙여넣기</h2>
+    <div class="field">
+      <textarea id="fbConfigInput" placeholder='const firebaseConfig = {
+  apiKey: "AIza...",
+  authDomain: "xxx.firebaseapp.com",
+  databaseURL: "https://xxx-default-rtdb...firebasedatabase.app",
+  projectId: "xxx",
+  ...
+};
+→ 이 형태 그대로 통째로 붙여넣으면 자동 인식합니다'></textarea>
+    </div>
+    <button class="next" onclick="saveFbConfig()">저장하고 연결 테스트</button>
+    <div id="fbStatus" class="notice" style="display:none"></div>
+    <div class="notice"><b>참가자 설정 생략하기</b> — 이 설정은 방장 1명만 하면 됩니다. 파일 코드의 <code>EMBEDDED_FB_CONFIG = null</code> 자리에 config를 붙여넣어 배포하면, 파일을 받는 사람은 아무 설정 없이 바로 참가합니다.</div>
+    <h2>3단계 — 친구가 링크로 접속하려면 (호스팅)</h2>
+    <p class="ov-desc">이 HTML 파일이 대장 폰에만 있으면 남이 열 수 없습니다. 무료 호스팅에 올리면 참여 링크 하나로 누구나 접속합니다.</p>
+    <div class="guide-step"><span class="no">A</span><span><b>Netlify Drop</b> (가장 쉬움): <code>app.netlify.com/drop</code>에 이 파일을 드래그 → 즉시 주소 발급. 파일명은 <code>index.html</code>로 바꿔서 올리세요.</span></div>
+    <div class="guide-step"><span class="no">B</span><span><b>GitHub Pages</b>: 저장소에 <code>index.html</code>로 올리고 Settings → Pages 활성화.</span></div>
+    <div class="notice">호스팅 없이도 <b>각자 이 파일을 받아서 열고, 방 코드를 직접 입력</b>하면 대결이 됩니다. 링크 자동입장만 호스팅이 필요합니다.</div>
+  </div>
+</div>
+
+<!-- ══════════ 튜토리얼 ══════════ -->
+<div class="screen" id="sTutorial">
+  <div class="ov-inner">
+    <button class="back" onclick="show('sHome')">← 홈으로</button>
+    <div class="ov-eyebrow">TUTORIAL</div>
+    <h1>10분이면 배우는<br><span class="amber">타임머신 트레이딩</span></h1>
+    <p class="ov-desc">과거의 어느 시점에 떨어져, 정체를 숨긴 종목 7개로 정해진 기간 동안 돈을 불리는 게임입니다. 지금이 언제인지, 이 종목이 무엇인지는 끝나야 알 수 있습니다.</p>
+    <button class="next" onclick="startTour()">▶ 화면 투어 시작 — 터치로 넘기며 배우기</button>
+    <div class="room-sub" style="margin:14px 0 2px">실제 화면 위에서 기능을 하나씩 비추며 설명합니다 · 아래는 글로 보는 참고용 정리</div>
+
+    <h2>🎮 한 판의 흐름</h2>
+    <div class="rules">
+      <div class="rule"><span class="no">01</span><span><b>방 만들기</b> — 자본금·기간을 숫자로 정하고, 원하면 🔥강철의 심장(역사적 폭락·버블이 반드시 포함), ⚡레버리지, 📉공매도를 켭니다. 혼자 연습도 가능합니다.</span></div>
+      <div class="rule"><span class="no">02</span><span><b>친구 초대</b> — 방 코드 4자리를 부르거나, 상단의 🔗링크(누르면 복사)를 공유하면 코드가 자동 입력된 채로 입장합니다.</span></div>
+      <div class="rule"><span class="no">03</span><span><b>하루 거래</b> — 과거 20일 차트와 📰당시 소문을 참고해 사고팝니다. 다 했으면 <b>장 마감</b> 버튼.</span></div>
+      <div class="rule"><span class="no">04</span><span><b>전원 대기</b> — 모두가 마감해야 다음 날이 열립니다. 기다리는 동안 마감자끼리 💬채팅으로 눈치 싸움을 하세요 (수익률은 서로 안 보입니다).</span></div>
+      <div class="rule"><span class="no">05</span><span><b>개장 브리핑</b> — 새 날이 열리면 전 종목 등락률이 5초간 공개됩니다. 마지막 날 마감 후 정산에서 순위·실명·실제 날짜·사건이 한꺼번에 공개됩니다.</span></div>
+    </div>
+
+    <h2>🛒 주문하는 법</h2>
+    <div class="rules">
+      <div class="rule"><span class="no">비율</span><span>수량 대신 <b>슬라이더(1~100%)</b>로 주문합니다. 매수는 <b>매수 여력의 %</b>, 매도는 <b>보유량의 %</b>. 버튼에 실제 체결 주수가 미리 표시됩니다.</span></div>
+      <div class="rule"><span class="no">배수</span><span>⚡레버리지 방에서는 <b>이번 거래 배수(1x~한도)</b>를 골라야 빚투가 됩니다. 기본은 항상 1x — 실수로 풀레버리지 걸릴 일은 없습니다. 3x 선택 = 순자산의 3배까지 매수(모자란 돈은 차입, 현금이 음수로 표시).</span></div>
+      <div class="rule"><span class="no">숏</span><span>📉공매도 방에서는 <b>보유가 0이어도 매도</b>가 됩니다(버튼에 "매도·숏"으로 표시). 빌린 주식을 판 돈이 현금에 들어오고, <b>가격이 내리면 이익</b>입니다. 되사려면 매수를 누르면 됩니다.</span></div>
+    </div>
+
+    <h2>📊 화면 읽는 법</h2>
+    <div class="rules">
+      <div class="rule"><span class="no">차트</span><span>회색 선 = 과거 20일(참고용), 색 선 = 진행 구간. 빨강=상승, 파랑=하락 (한국 증권 앱 관례).</span></div>
+      <div class="rule"><span class="no">소문</span><span>📰당시 소문 = 그 시기의 실제 호재·악재를 실명·연도 없이 흐릿하게 쓴 것. 소문으로 시대와 정체를 추리하는 게 이 게임의 묘미입니다.</span></div>
+      <div class="rule"><span class="no">랭킹</span><span>상단 띠는 <b>순위만</b> 보여줍니다 (👑=1위, 밝은 칩=나). 남의 수익률은 정산 때까지 비밀.</span></div>
+      <div class="rule"><span class="no">노출</span><span>레버리지 방의 "노출 2.4x / 한도 3x · 차입 ₩…" = 지금 순자산 대비 몇 배를 태우고 있는지. 빨간색이면 위험 구간입니다.</span></div>
+    </div>
+
+    <h2>💀 파산 규칙 (레버리지·숏 방만 해당)</h2>
+    <p class="ov-desc">하루가 열렸을 때 <b style="color:var(--txt)">순자산(현금+평가액)이 0 이하</b>면 전량 강제 청산됩니다. 남은 마이너스는 <b style="color:var(--txt)">부채로 확정</b>되어 정산에 -100%를 넘는 손실(예: -120%)로 기록됩니다. 3배 풀매수는 하루 -34%면 파산, 숏은 급등하면 손실이 원금을 넘을 수 있습니다. 1배 현물만 쓰면 파산은 없습니다.</p>
+
+    <h2>🧭 알아두면 좋은 것</h2>
+    <div class="rules">
+      <div class="rule"><span class="no">복구</span><span>앱이 꺼지거나 튕겨도 홈의 <b>"진행 중이던 방으로 복귀"</b>로 재입장하면 지갑·보유가 그대로 복원됩니다.</span></div>
+      <div class="rule"><span class="no">공정</span><span>모든 참가자는 완전히 같은 시세·종목·기간을 봅니다 (같은 시드에서 생성). 가명은 판마다 무작위로 바뀝니다.</span></div>
+      <div class="rule"><span class="no">지뢰</span><span>종목 중에는 상장폐지급 붕괴를 겪은 코인도 섞여 있습니다. "왜 이렇게 싸지?" 싶으면 이유가 있는 겁니다.</span></div>
+    </div>
+
+    <div class="notice"><b>데이터 안내</b> — 큰 흐름(폭락·랠리)은 실제 역사적 가격 지점을 따르지만, 하루하루 시세는 각 종목의 실제 변동성 수준으로 수학적으로 재구성한 근사치입니다. 실제 과거 종가와 다를 수 있으며, 투자 조언이 아닌 게임입니다.</div>
+    <button class="next" onclick="show('sHome')">이해 완료, 시작하러 가기</button>
+  </div>
+</div>
+
+<!-- ══════════ 방 설정 (호스트/솔로 공용) ══════════ -->
+<div class="screen" id="sConfig">
+  <div class="ov-inner">
+    <button class="back" onclick="show('sHome')">← 홈으로</button>
+    <div class="ov-eyebrow" id="cfgEyebrow">HOST</div>
+    <h1 id="cfgTitle">대결 규칙 정하기</h1>
+    <div class="field" id="nickField"><label>닉네임</label><input id="nick" maxlength="10" placeholder="예: 여의도늑대"></div>
+    <div class="field"><label>시작 자본금 (만원 단위 · 100~1,000,000)</label>
+      <input type="number" id="cfgCash" value="1000" min="100" max="1000000" inputmode="numeric">
+      <div class="quick" style="margin-top:8px">
+        <button onclick="setCfgCash(1000)">1천만</button>
+        <button onclick="setCfgCash(5000)">5천만</button>
+        <button onclick="setCfgCash(10000)">1억</button>
+        <button onclick="setCfgCash(100000)">10억</button>
+      </div>
+    </div>
+    <div class="field"><label>진행 일수 (거래일 · 2~60)</label>
+      <input type="number" id="cfgDays" value="10" min="2" max="60" inputmode="numeric">
+      <div class="quick" style="margin-top:8px">
+        <button onclick="setCfgDays(5)">5일</button>
+        <button onclick="setCfgDays(10)">10일</button>
+        <button onclick="setCfgDays(20)">20일</button>
+        <button onclick="setCfgDays(30)">30일</button>
+      </div>
+    </div>
+    <div class="field"><label>하루 제한시간 (초 · 0=무제한, 최대 600)</label>
+      <input type="number" id="cfgTime" value="0" min="0" max="600" inputmode="numeric">
+      <div class="quick" style="margin-top:8px">
+        <button onclick="setCfgTime(0)">무제한</button>
+        <button onclick="setCfgTime(30)">30초</button>
+        <button onclick="setCfgTime(60)">1분</button>
+        <button onclick="setCfgTime(180)">3분</button>
+      </div>
+      <div style="font-size:11px;color:var(--dim);margin-top:7px;line-height:1.6">시간이 끝나면 자동으로 장 마감됩니다. 기기별 몇 초 오차 가능 · 완전히 꺼진 기기는 강퇴로 정리하세요.</div>
+    </div>
+    <div class="field"><label>게임 모드</label>
+      <div class="seg" id="segMode">
+        <button data-v="0" class="on">일반</button>
+        <button data-v="1">🔥 강철의 심장</button>
+      </div>
+      <div style="font-size:11px;color:var(--dim);margin-top:7px;line-height:1.6">강철의 심장: 리먼 파산, 코인 광풍, 코로나 폭락 같은 역사적 급변 사건이 <b style="color:var(--txt)">반드시 진행 기간 안에 포함</b>됩니다. 어떤 사건인지는 정산 때 공개.</div>
+    </div>
+    <div class="field"><label>레버리지 (증거금 거래)</label>
+      <div class="seg" id="segLev">
+        <button data-v="0" class="on">사용 안 함</button>
+        <button data-v="1">⚡ 사용</button>
+      </div>
+      <div id="levDetail" style="display:none;margin-top:10px">
+        <label style="font-size:12px;color:var(--dim);display:block;margin-bottom:7px">최대 배수 (2~150) · 11배부터 게임 내 슬라이더 선택</label>
+        <input type="number" id="levMax" value="3" min="2" max="150" inputmode="numeric">
+        <div style="font-size:11px;color:var(--dim);margin-top:7px;line-height:1.6">순자산의 N배까지 매수 가능(부족분 차입). <b style="color:var(--up)">하루가 열렸을 때 순자산이 0 이하면 전량 청산·파산 💀</b> 이자는 없습니다.</div>
+      </div>
+    </div>
+    <div class="field"><label>숏 (공매도)</label>
+      <div class="seg" id="segShort">
+        <button data-v="0" class="on">허용 안 함</button>
+        <button data-v="1">📉 허용</button>
+      </div>
+      <div style="font-size:11px;color:var(--dim);margin-top:7px;line-height:1.6">보유 0에서 매도하면 하락에 베팅하는 숏 포지션이 열립니다. 총 노출(롱+숏)은 순자산×배수까지. <b style="color:var(--up)">주가가 오르면 숏은 손실이며 순자산 0 이하 시 청산·파산합니다.</b></div>
+    </div>
+    <button class="next" id="btnCfgGo" onclick="confirmConfig()">방 만들기</button>
+  </div>
+</div>
+
+<!-- ══════════ 참가 ══════════ -->
+<div class="screen" id="sJoin">
+  <div class="ov-inner">
+    <button class="back" onclick="show('sHome')">← 홈으로</button>
+    <div class="ov-eyebrow">JOIN</div>
+    <h1>방 코드 입력</h1>
+    <div class="field"><label>닉네임</label><input id="joinNick" maxlength="10" placeholder="예: 강남불개미"></div>
+    <div class="field"><label>방 코드 (4자리)</label><input id="joinCode" class="code-input" maxlength="4" placeholder="○○○○"></div>
+    <button class="next" onclick="joinRoom()">입장하기</button>
+  </div>
+</div>
+
+<!-- ══════════ 로비 ══════════ -->
+<div class="screen" id="sLobby">
+  <div class="ov-inner">
+    <div class="ov-eyebrow">LOBBY</div>
+    <h1 id="lobbyTitle">참가자 대기 중</h1>
+    <div class="room-code" id="lobbyCode">····</div>
+    <div class="room-sub" id="lobbyRule">—</div>
+    <button class="join-link" id="joinLink" style="display:none" onclick="copyJoinLink()"></button>
+    <div class="room-sub" id="linkHint"></div>
+    <h2 style="margin-top:18px">💬 대기실 채팅</h2>
+    <div class="chat-box">
+      <div class="chat-log" id="lobbyChatList"></div>
+      <div class="chat-in">
+        <input id="lobbyChatInput" maxlength="120" placeholder="시작 전 대기실 채팅 — 규칙 상의, 도발 환영">
+        <button onclick="sendChat('lobbyChatInput')">전송</button>
+      </div>
+    </div>
+    <div class="plist" id="lobbyList"></div>
+    <button class="next" id="btnStart" style="display:none" onclick="hostStart()">전원 모였으면 시작 ⚔</button>
+    <div class="wait-pulse" id="lobbyWait" style="display:none">HOST가 시작하기를 기다리는 중···</div>
+    <button class="ghost" onclick="leaveRoom()">방 나가기</button>
+  </div>
+</div>
+
+<!-- ══════════ 게임 ══════════ -->
+<div class="screen" id="sGame">
+  <div class="board">
+    <div class="board-top">
+      <span class="brand" id="brandTag">TIME MACHINE</span>
+      <span><span id="dayTimer" style="font-family:var(--mono);font-size:12px;margin-right:10px"></span><span style="font-family:var(--mono);font-size:12px;color:var(--dim)" id="dayLabel">DAY 1</span></span>
+    </div>
+    <div class="day-lamps" id="lamps"></div>
+    <div class="rank-strip" id="rankStrip" style="display:none"></div>
+    <div class="board-total">
+      <div><div class="lbl">총 자산</div><div class="val" id="totalVal">—</div></div>
+      <div class="sub"><div id="totalChg" class="flat">—</div><div style="color:var(--dim);font-size:11px;margin-top:2px">현금 <span id="cashVal">—</span></div></div>
+    </div>
+  </div>
+  <div class="tabs" id="tabs"></div>
+  <div class="card">
+    <div class="quote">
+      <div><div class="name" id="qName">—</div><div class="cat" id="qCat">—</div></div>
+      <div><div class="px" id="qPx">—</div><div class="chg" id="qChg">—</div></div>
+    </div>
+    <div class="qnews" id="qNews" style="display:none"></div>
+    <canvas class="chart" id="chart"></canvas>
+    <div class="chart-note">과거 20일 + 진행 구간 · 날짜/실명 비공개</div>
+  </div>
+  <div class="card">
+    <div class="row"><span class="k">보유 수량</span><span class="v" id="pQty">0주</span></div>
+    <div class="row"><span class="k">평균 단가</span><span class="v" id="pAvg">—</span></div>
+    <div class="row"><span class="k">평가 손익</span><span class="v" id="pPnl">—</span></div>
+    <div class="row" id="levRow" style="display:none"><span class="k">레버리지</span><span class="v" id="pLev">—</span></div>
+    <div id="levPick" style="display:none;margin-top:12px">
+      <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--dim)"><span>이번 거래 레버리지 (기본 1x)</span><span id="levPickVal" style="font-family:var(--mono);font-size:14px;color:var(--amber);font-weight:700">1x</span></div>
+      <div class="quick" id="levBtns" style="margin-top:6px"></div>
+    </div>
+    <div class="slider-wrap">
+      <input type="range" id="pctSlider" min="1" max="100" value="50" oninput="onPct(this.value)">
+      <div class="slider-cap"><span>주문 비율 (매수=현금 기준 · 매도=보유 기준)</span><span id="pctLabel">50%</span></div>
+    </div>
+    <div class="quick">
+      <button onclick="setPct(25)">25%</button>
+      <button onclick="setPct(50)">50%</button>
+      <button onclick="setPct(75)">75%</button>
+      <button onclick="setPct(100)">100%</button>
+    </div>
+    <div class="trade">
+      <button class="btn-buy" id="btnBuy" onclick="trade(1)">매수</button>
+      <button class="btn-sell" id="btnSell" onclick="trade(-1)">매도</button>
+    </div>
+  </div>
+  <div class="footer"><button class="next" id="btnNext" onclick="submitDay()">오늘 장 마감 →</button></div>
+</div>
+
+<!-- ══════════ 동기화 대기 ══════════ -->
+<div class="screen" id="sWait">
+  <div class="ov-inner">
+    <div class="ov-eyebrow">SYNC</div>
+    <h1 id="waitTitle">DAY 1 마감</h1>
+    <p class="ov-desc">전원이 장을 마감하면 다음 날이 열립니다. 마감한 사람의 현재 자산이 먼저 공개됩니다.</p>
+    <div class="plist" id="waitList"></div>
+    <div class="wait-pulse">WAITING FOR TRADERS···</div>
+    <h2 style="margin-top:26px">💬 마감자 채팅</h2>
+    <div class="chat-box">
+      <div class="chat-log" id="chatList"></div>
+      <div class="chat-in">
+        <input id="chatInput" maxlength="120" placeholder="마감한 사람끼리만 보입니다…">
+        <button onclick="sendChat()">전송</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ 결과 ══════════ -->
+<div class="screen" id="sResult">
+  <div class="ov-inner">
+    <div class="ov-eyebrow">SETTLEMENT</div>
+    <h1 id="rTitle">정산</h1>
+    <div id="rBattle"></div>
+    <div class="result-total" id="rMine"></div>
+    <div class="notice" id="rDate"></div>
+    <h2>종목 실명 공개</h2>
+    <div id="rList"></div>
+    <div class="notice"><b>다시 한 번:</b> 일 단위 시세는 실제 역사적 앵커 사이를 통계적으로 재구성한 근사치이며, 실제 당시 종가와 다를 수 있습니다.</div>
+    <button class="next" onclick="location.search ? location.href=location.pathname : resetToHome()">홈으로</button>
+  </div>
+</div>
+
+<!-- ══════════ 개장 브리핑 (5초) ══════════ -->
+<div id="recapOv" onclick="hideRecap()">
+  <div class="recap-box">
+    <div class="recap-title">— DAY <span id="recapDay"></span> 개장 —</div>
+    <div id="recapList"></div>
+    <div class="recap-total" id="recapTotal"></div>
+    <div class="recap-skip">터치하면 바로 시작 · <span id="recapCnt">5</span></div>
+  </div>
+</div>
+
+<!-- ══════════ 화면 투어 오버레이 ══════════ -->
+<div id="tourOv" style="display:none" onclick="tourNext()">
+  <div id="tourHole"></div>
+  <div id="tourTip">
+    <div class="tt-step"></div>
+    <div class="tt-title"></div>
+    <div class="tt-text"></div>
+    <div class="tt-tap">화면을 터치하면 다음 →</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+/* ════════════════════════════════════════════
+   0) 안전한 로컬 저장 (미지원 환경 대비 가드)
+   ════════════════════════════════════════════ */
+const store = {
+  get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } },
+  set(k,v){ try{ localStorage.setItem(k,v); }catch(e){} },
+  del(k){ try{ localStorage.removeItem(k); }catch(e){} },
+};
+
+/* ════════════════════════════════════════════
+   1) 거래일 달력 (1998-01-02 ~ 2025-12-31, 주말 제외)
+   ════════════════════════════════════════════ */
+const DATES = (() => {
+  const out = [], d = new Date(1998,0,2), end = new Date(2025,11,31);
+  while (d <= end){ const w = d.getDay(); if (w!==0 && w!==6) out.push(new Date(d)); d.setDate(d.getDate()+1); }
+  return out;
+})();
+const idxOfDate = (y,m,d=1) => {   // 해당 날짜(이후 첫 거래일) 인덱스
+  for (let i=0;i<DATES.length;i++){
+    const t = DATES[i];
+    if (t.getFullYear()>y || (t.getFullYear()===y && (t.getMonth()+1>m ||
+        (t.getMonth()+1===m && t.getDate()>=d)))) return i;
+  }
+  return DATES.length-1;
+};
+const idxOfMonth = (y,m) => idxOfDate(y,m,1);
+
+/* ════════════════════════════════════════════
+   2) 자산 정의 — alias(가명)로 표시, real(실명)은 정산 때만
+      앵커 = 실제 역사적 가격 지점(근사) [연,월,가격]
+   ════════════════════════════════════════════ */
+const ASSETS = [
+ {id:'SS',   real:'삼성전자',            cat:'한국 주식',            vol:.017, unit:1, anchors:[
+   [1998,9,700],[2000,1,7800],[2001,9,2700],[2004,4,12600],[2006,1,13200],[2007,11,11500],[2008,10,9000],[2010,6,16000],[2013,1,30000],[2015,8,22500],
+   [2016,12,36000],[2017,11,56000],[2019,1,38000],[2020,1,60000],[2020,3,43000],[2021,1,91000],
+   [2021,12,78000],[2022,9,53000],[2023,12,78000],[2024,7,87000],[2024,11,50500],[2025,6,60000],
+   [2025,11,101000],[2025,12,95000]]},
+ {id:'HX',   real:'SK하이닉스',          cat:'한국 주식',            vol:.026, unit:1, anchors:[
+   [2006,1,34000],[2008,11,6600],[2010,4,26000],[2012,7,21000],[2014,10,46000],[2016,5,28000],
+   [2018,5,90000],[2019,1,60000],[2020,3,66000],[2021,2,140000],[2022,9,82000],[2023,12,140000],
+   [2024,7,240000],[2024,9,152000],[2025,3,200000],[2025,7,270000],[2025,11,550000],[2025,12,480000]]},
+ {id:'NV',     real:'NAVER',               cat:'한국 주식',            vol:.022, unit:1, anchors:[
+   [2014,1,140000],[2015,9,110000],[2017,7,160000],[2018,10,118000],[2020,3,145000],[2020,9,300000],
+   [2021,7,450000],[2022,10,165000],[2023,8,230000],[2024,6,168000],[2025,2,220000],[2025,11,250000]]},
+ {id:'HD',   real:'현대차',              cat:'한국 주식',            vol:.019, unit:1, anchors:[
+   [1998,10,13000],[2000,12,13500],[2002,4,38000],[2004,8,50000],[2006,1,68000],[2008,11,39000],[2011,5,230000],[2012,4,268000],[2014,9,198000],[2015,12,150000],
+   [2018,12,120000],[2020,3,69000],[2021,1,250000],[2022,7,182000],[2023,6,205000],[2024,6,288000],
+   [2024,12,220000],[2025,8,212000],[2025,12,235000]]},
+ {id:'AA',     real:'애플 (AAPL)',         cat:'미국 주식(×1,300원)',  vol:.018, unit:1300, anchors:[
+   [1998,1,.15],[2000,3,1.2],[2000,12,.26],[2003,4,.23],[2006,1,2.7],[2007,12,7.1],[2009,1,3.2],[2012,9,25],[2013,4,14.5],[2015,7,32],[2016,5,23],
+   [2018,10,55],[2019,1,38],[2020,2,80],[2020,3,57],[2021,12,180],[2022,12,130],[2023,7,195],
+   [2024,4,167],[2024,12,250],[2025,4,192],[2025,12,270]]},
+ {id:'TS',   real:'테슬라 (TSLA)',       cat:'미국 주식(×1,300원)',  vol:.036, unit:1300, anchors:[
+   [2010,7,1.6],[2013,1,2.3],[2014,9,19],[2016,2,10],[2019,6,12],[2020,2,60],[2020,3,24],
+   [2020,12,235],[2021,11,410],[2022,12,110],[2023,7,280],[2024,4,145],[2024,12,480],
+   [2025,3,225],[2025,9,440],[2025,12,430]]},
+ {id:'MS',   real:'마이크로소프트 (MSFT)',cat:'미국 주식(×1,300원)', vol:.015, unit:1300, anchors:[
+   [1998,1,11],[1999,12,29],[2000,12,14],[2002,10,11],[2006,1,27],[2009,3,16],[2012,6,30],[2014,11,48],[2016,10,60],[2018,9,113],[2020,2,188],
+   [2020,3,137],[2021,11,340],[2022,10,222],[2023,7,340],[2024,7,462],[2025,1,420],
+   [2025,7,505],[2025,12,480]]},
+ {id:'ND',   real:'엔비디아 (NVDA)',     cat:'미국 주식(×1,300원)',  vol:.030, unit:1300, anchors:[
+   [1999,2,.03],[2001,1,.20],[2002,10,.02],[2006,1,.30],[2007,10,.95],[2008,11,.15],[2015,1,.50],[2016,12,2.6],[2018,9,7.0],[2019,1,3.4],
+   [2020,3,4.9],[2021,11,33],[2022,10,11],[2023,5,38],[2024,3,90],[2024,6,132],[2024,8,102],
+   [2025,1,118],[2025,10,200],[2025,12,182]]},
+ {id:'AM',     real:'아마존 (AMZN)',       cat:'미국 주식(×1,300원)',  vol:.021, unit:1300, anchors:[
+   [1998,1,.25],[1999,12,5.3],[2001,9,.30],[2003,10,2.9],[2006,1,2.3],[2008,11,2.1],[2010,10,7.8],[2013,12,19],[2015,12,33],[2018,9,100],[2018,12,68],
+   [2020,3,95],[2020,9,160],[2021,7,185],[2022,12,84],[2023,8,135],[2024,11,210],
+   [2025,2,238],[2025,8,222],[2025,12,235]]},
+ {id:'BT',     real:'비트코인 (BTC)',      cat:'코인 · 1주=0.001개(×1,300원)', vol:.040, unit:1.3, anchors:[
+   [2013,1,13],[2013,12,750],[2015,1,220],[2016,6,650],[2017,12,19000],[2018,12,3700],
+   [2019,6,11000],[2020,3,5000],[2021,4,63000],[2021,7,31000],[2021,11,67000],[2022,11,16000],
+   [2023,10,30000],[2024,3,70000],[2024,9,58000],[2024,12,106000],[2025,4,80000],
+   [2025,10,120000],[2025,12,88000]]},
+ {id:'ET',     real:'이더리움 (ETH)',      cat:'코인 · 1주=0.01개(×1,300원)', vol:.050, unit:13, anchors:[
+   [2016,1,1],[2016,6,14],[2017,1,10],[2017,6,300],[2018,1,1300],[2018,12,85],
+   [2020,3,110],[2021,5,4000],[2021,7,1900],[2021,11,4800],[2022,6,1000],[2023,4,2000],
+   [2024,3,4000],[2024,10,2400],[2024,12,3700],[2025,4,1500],[2025,8,4700],[2025,12,3000]]},
+ {id:'DG',     real:'도지코인 (DOGE)',     cat:'코인 · 1주=100개(×1,300원)', vol:.070, unit:130000, anchors:[
+   [2017,1,.0002],[2018,1,.012],[2018,12,.002],[2020,3,.0015],[2021,1,.008],[2021,5,.68],
+   [2021,12,.17],[2022,6,.06],[2023,12,.09],[2024,11,.42],[2025,1,.33],[2025,4,.15],
+   [2025,12,.15]]},
+ {id:'SL',     real:'솔라나 (SOL)',        cat:'코인 · 1주=1개(×1,300원)', vol:.070, unit:1300, anchors:[
+   [2020,4,.8],[2021,1,3.5],[2021,5,45],[2021,7,30],[2021,11,250],[2022,12,10],
+   [2023,12,100],[2024,3,190],[2024,11,240],[2025,1,260],[2025,4,105],[2025,9,235],
+   [2025,12,135]]},
+ {id:'XR',     real:'리플 (XRP)',          cat:'코인 · 1주=10개(×1,300원)', vol:.060, unit:13000, anchors:[
+   [2014,1,.025],[2015,6,.01],[2017,1,.006],[2018,1,3.0],[2018,12,.35],[2020,3,.14],
+   [2021,4,1.6],[2021,12,.85],[2022,12,.35],[2024,10,.55],[2025,1,3.2],[2025,7,3.5],
+   [2025,12,2.0]]},
+ {id:'LN', real:'루나 (LUNA)',        cat:'코인 · 1주=1개(×1,300원)', vol:.080, unit:1300, anchors:[
+   [2019,8,1.2],[2020,3,.2],[2020,9,.35],[2021,1,.65],[2021,3,18],[2021,5,16],
+   [2021,7,6],[2021,12,85],[2022,4,116,5],[2022,5,64,6],[2022,5,.3,13],[2022,6,.0005]]},
+ {id:'SB', real:'시바이누 (SHIB)',    cat:'코인 · 1주=100만개(×1,300원)', vol:.090, unit:1300000000, anchors:[
+   [2021,1,.00000002],[2021,5,.000035],[2021,7,.000006],[2021,10,.00008],[2022,6,.00001],
+   [2023,6,.0000075],[2024,3,.000033],[2024,8,.000013],[2024,12,.000022],[2025,4,.000012],
+   [2025,12,.0000085]]},
+ {id:'PP', real:'페페 (PEPE)',        cat:'코인 · 1주=1000만개(×1,300원)', vol:.100, unit:13000000000, anchors:[
+   [2023,4,.00000008],[2023,5,.0000035],[2023,9,.0000008],[2024,3,.000008],[2024,5,.00001],
+   [2024,8,.0000065],[2024,12,.000024],[2025,1,.000014],[2025,4,.000006],[2025,12,.0000045]]},
+];
+
+/* ════════════════════════════════════════════
+   3) 시드 고정 결정론 생성 — 대결 공정성의 핵심
+      같은 seed → 모든 참가자가 완전히 동일한 시세/종목/기간
+   ════════════════════════════════════════════ */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function makeGauss(rng){ return () => {
+  let u=0,v=0; while(!u)u=rng(); while(!v)v=rng();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+};}
+function buildSeries(a, seed){
+  const g = makeGauss(mulberry32((seed*7919 + a.id.charCodeAt(0)*104729 + a.id.charCodeAt(1)*31) | 0));
+  const pts = a.anchors.map(([y,m,p,d]) => [idxOfDate(y,m,d||1), Math.log(p)]);
+  const s = new Array(DATES.length).fill(null);
+  for (let k=0;k<pts.length-1;k++){
+    const [i0,l0]=pts[k],[i1,l1]=pts[k+1],N=i1-i0;
+    const walk=[0]; for(let i=1;i<=N;i++) walk.push(walk[i-1]+g()*a.vol);
+    for(let i=0;i<=N;i++){ const t=i/N; s[i0+i]=Math.exp(l0+t*(l1-l0)+(walk[i]-t*walk[N])); }
+  }
+  a.first = pts[0][0]; a.last = pts[pts.length-1][0];
+  return s;
+}
+// 시드 하나로 게임 전체(시세·종목 7개·시작일)를 재현
+/* 강철의 심장 모드용 역사적 급변 사건 (기간 경계 월은 실제 역사에 근거한 근사 구분)
+   must: 사건의 주인공 — 반드시 포함 / focus: 관련 종목 — 우선 포함 */
+const EVENTS = [
+ {name:'닷컴버블 대팽창',                      from:[1999,10], to:[2000,3],  must:['AM'], focus:['MS','ND']},
+ {name:'닷컴버블 붕괴',                        from:[2000,3],  to:[2000,12], must:['AM'], focus:['MS','AA']},
+ {name:'9·11 테러와 패닉',                     from:[2001,9],  to:[2001,10], must:[],     focus:['SS','AA','HD']},
+ {name:'서브프라임 균열 — 대세 하락의 시작', from:[2007,10], to:[2008,3],  must:[],     focus:['HX','SS','AA']},
+ {name:'리먼 브라더스 파산 — 글로벌 금융위기', from:[2008,9], to:[2008,12], must:['HX'], focus:['SS','AA']},
+ {name:'금융위기 바닥, 극적 반등',            from:[2009,3],  to:[2009,7],  must:[],     focus:['HX','AM','AA']},
+ {name:'미국 신용등급 강등 쇼크',              from:[2011,8],  to:[2011,10], must:[],     focus:['HD','SS','AA']},
+ {name:'코인 대광풍 — 버블 팽창',              from:[2017,9],  to:[2018,1],  must:['BT'], focus:['ET','XR']},
+ {name:'코인 버블 대붕괴',                     from:[2018,1],  to:[2018,4],  must:['BT'], focus:['ET','XR']},
+ {name:'미·중 무역전쟁 급락장',                from:[2018,10], to:[2018,12], must:[],     focus:['AA','ND','SS']},
+ {name:'코로나 대폭락',                        from:[2020,2],  to:[2020,4],  must:[],     focus:['TS','AA','HD']},
+ {name:'코로나 V자 반등 폭등장',               from:[2020,4],  to:[2020,8],  must:[],     focus:['TS','AM','ND']},
+ {name:'유동성 대불장',                        from:[2020,11], to:[2021,2],  must:['BT'], focus:['TS','HX']},
+ {name:'밈코인 광풍과 1차 붕괴',               from:[2021,4],  to:[2021,6],  must:['DG'], focus:['BT','SB']},
+ {name:'역대 고점, 붕괴의 시작',               from:[2021,11], to:[2022,1],  must:[],     focus:['ND','BT','ET']},
+ {name:'인플레이션 쇼크와 루나 사태',          from:[2022,4],  to:[2022,6],  must:['LN'], focus:['BT','ET']},
+ {name:'약세장 바닥 (FTX 파산)',               from:[2022,9],  to:[2022,11], must:['SL'], focus:['BT','ET']},
+ {name:'엔 캐리 청산 블랙먼데이',              from:[2024,7],  to:[2024,8],  must:[],     focus:['HX','ND','AA']},
+ {name:'대선 랠리 — 비트코인 10만 돌파',       from:[2024,11], to:[2025,1],  must:['BT'], focus:['XR','PP']},
+ {name:'관세 쇼크 폭락장',                     from:[2025,3],  to:[2025,5],  must:[],     focus:['AA','TS','ND']},
+ {name:'AI 랠리 정점과 연말 급락',             from:[2025,10], to:[2025,12], must:['ND'], focus:['HX','BT']},
+];
+
+/* 가명 조합 풀: 접미어가 실제 업종과 무관하게 섞여 이름으로는 정체 유추 불가 */
+const STOCK_PRE = ['몬스터','거인','한빛','백두','천둥','번개','섬광','초록','두루미','한강','천리마','무쇠',
+ '무궁화','사과','열매','은빛','조약돌','화성','로켓','격자','네모','구름','픽셀','두뇌','정글','열대',
+ '만물','큰강','독수리','별빛','은하','혜성','황금','대왕','왕관','다이아','수정','유리','달빛','소나무',
+ '고요','폭풍','새벽','자갈','호랑이','불곰','백호','청룡'];
+const STOCK_SUF = ['전자','테크','반도체','중공업','상사','모터스','소프트','산업','물산','에너지','바이오','유통','항공','금융'];
+const COIN_PRE = ['감자','고구마','옥수수','붕어빵','펭귄','수정','에메랄드','유리','고래','상어','파도','심해',
+ '구름','안개','솜사탕','비눗방울','은하수','오로라','무지개','솜털','도토리','다람쥐','밤톨','땅콩',
+ '젤리','푸딩','마시멜로','슬라임','황금','대왕','왕관','다이아','번개','천둥','유령','로켓','별똥별',
+ '바나나','수박','딸기','망고','코뿔소','하마','수달','너구리','두더지','고슴도치','문어','오징어',
+ '새우','악어','공룡','유니콘','도깨비','두부','만두','꽈배기','몽실','딸랑','폭탄','솜주먹'];
+
+/* 당시 소문: 실제 호재·악재를 실명·연도 없이 마스킹한 문구 (근사 구간) */
+const NEWS = {
+ SS:[[1998,6,1999,3,'국가 외환위기 여파, 헐값 수출로 연명'],[1999,10,2000,3,'기술주 광풍에 반도체 기대 폭발'],[2000,4,2001,10,'IT 버블 붕괴, 메모리 가격 폭락'],[2007,10,2009,3,'글로벌 금융위기, 수출 절벽 공포'],[2010,1,2013,5,'스마트폰 대전 승자로 부상, 최대 실적 행진'],[2016,9,2016,12,'주력 신제품 발화 리콜 사태'],[2017,1,2018,5,'메모리 초호황, 분기마다 신기록'],[2020,2,2020,4,'전염병 대유행 공포, 증시 동반 폭락'],[2020,11,2021,1,'슈퍼사이클 기대, 개인 매수 폭주'],[2022,1,2022,10,'금리 급등·메모리 한파, 전망 줄하향'],[2024,9,2025,2,'AI 메모리 경쟁 뒤처짐 우려로 투매'],[2025,6,2025,12,'AI 메모리 반사이익 기대 폭발']],
+ HX:[[2007,11,2008,12,'반도체 치킨게임, 적자의 늪'],[2010,1,2011,12,'치킨게임 생존자 구도 재편'],[2017,1,2018,5,'메모리 초호황 최대 수혜'],[2018,10,2019,6,'메모리 다운사이클 진입'],[2020,12,2021,3,'슈퍼사이클 기대 재점화'],[2022,4,2022,12,'수요 절벽, 감산 압박'],[2023,10,2024,7,'AI 메모리 독주 체제 부상'],[2024,8,2024,10,'AI 버블 논란에 급조정'],[2025,5,2025,12,'AI 메모리 공급 부족, 주문 폭주']],
+ NV:[[2014,1,2015,12,'모바일 메신저 자회사 해외 흥행'],[2020,3,2021,7,'비대면 시대 플랫폼 폭발 성장'],[2021,8,2022,10,'금리 급등에 성장주 투매'],[2023,1,2023,8,'AI 검색 경쟁 합류 기대'],[2024,1,2024,12,'외산 플랫폼 공세, 성장 정체 우려']],
+ HD:[[1998,10,1999,12,'외환위기 구조조정, 헐값 매물 신세'],[2002,1,2004,12,'품질 경영 선언, 해외 약진'],[2008,9,2008,12,'금융위기 소비 절벽'],[2010,1,2012,4,'글로벌 점유율 질주, 사상 최고 행진'],[2015,1,2018,12,'대륙 시장 부진과 파업 리스크'],[2020,3,2020,4,'공장 셧다운 공포'],[2020,11,2021,1,'미래차 협업 루머에 급등'],[2023,1,2024,6,'고급 브랜드·해외 실적 신기록']],
+ AA:[[1998,1,2000,3,'혁신가 CEO 복귀, 기술주 광풍 편승'],[2000,9,2003,4,'버블 붕괴와 실적 쇼크로 추락'],[2007,1,2008,1,'혁신 휴대기기 공개, 시장 열광'],[2008,9,2008,12,'금융위기 소비 위축 공포'],[2012,9,2013,4,'고성장 정점 논란, 차익 매물'],[2018,10,2019,1,'판매 부진 실적 경고'],[2020,5,2021,12,'비대면 수요 폭발, 시총 신기원'],[2024,5,2025,12,'AI 기기 기대와 반독점 리스크 공존']],
+ TS:[[2010,7,2013,1,'전기차 양산 회의론과 자금난 소문'],[2013,2,2014,9,'흑자 서프라이즈, 공매도 불태우기'],[2018,1,2019,6,'양산 지옥과 상장폐지 트윗 소동'],[2019,10,2021,1,'흑자 행진·지수 편입, 개인 열광'],[2021,11,2022,12,'CEO의 SNS 기업 인수 소동, 물량 폭탄'],[2023,1,2023,7,'파격 가격 인하 승부수'],[2024,10,2024,12,'자율주행·정치권 밀월 기대 폭등'],[2025,1,2025,4,'CEO 정치 행보에 불매 역풍']],
+ MS:[[1998,1,2000,3,'PC 제국 전성기, 기술주 광풍 주도'],[2000,4,2002,10,'반독점 소송과 버블 붕괴 이중고'],[2009,1,2013,12,'모바일 전환 실기, 잃어버린 10년'],[2014,2,2016,12,'새 수장의 구름(클라우드) 승부수'],[2018,1,2021,11,'클라우드 폭풍 성장, 시총 1위 탈환'],[2022,1,2022,10,'금리 급등 성장주 조정'],[2023,1,2024,7,'AI 챗봇 선점, AI 대장주 등극'],[2025,8,2025,12,'AI 투자 과잉 논란']],
+ ND:[[1999,2,2000,3,'그래픽칩 신예, 기술주 광풍 편승'],[2000,4,2002,10,'버블 붕괴 직격탄'],[2016,1,2018,9,'게임·데이터센터 양날개 급성장'],[2018,10,2019,1,'채굴 수요 증발 쇼크'],[2020,5,2021,11,'AI·게임 수요 폭발'],[2022,1,2022,10,'채굴 붕괴 2차 쇼크'],[2023,5,2024,6,'AI 칩 사실상 독점, 경이적 실적'],[2024,7,2024,8,'AI 버블 논쟁 급조정'],[2025,1,2025,2,'저비용 AI 모델 등장 충격'],[2025,10,2025,12,'AI 투자 사이클 정점 논쟁']],
+ AM:[[1998,1,2000,3,'인터넷 상거래 신화, 적자에도 폭주'],[2000,4,2001,12,'버블 붕괴, 파산설까지'],[2002,1,2003,12,'기적의 생존, 흑자 전환'],[2008,9,2008,12,'금융위기 소비 위축'],[2015,1,2018,9,'클라우드 대박, 유통 제국 완성'],[2018,10,2018,12,'고점 논란 급락'],[2020,3,2020,9,'비대면 쇼핑 폭발, 최대 수혜'],[2022,1,2022,12,'과잉 고용 후폭풍, 사상 최대 감원'],[2023,6,2025,12,'AI 클라우드 재가속']],
+ BT:[[2013,1,2013,12,'괴짜들의 디지털 화폐, 첫 주목'],[2014,2,2015,12,'대형 거래소 파산 암흑기'],[2017,1,2017,12,'광풍의 해, 김치 프리미엄까지'],[2018,1,2018,12,'버블 붕괴 -80%'],[2020,10,2021,4,'기관 매수 러시, 제도권 진입'],[2021,5,2021,7,'채굴 금지령·결제 철회 쇼크'],[2021,10,2021,11,'현물 열풍 사상 최고가'],[2022,5,2022,11,'연쇄 파산 사태, 겨울 도래'],[2024,1,2024,12,'현물 ETF 승인, 대선 랠리'],[2025,10,2025,12,'차익 실현 폭탄, 급조정']],
+ ET:[[2017,1,2018,1,'스마트 계약 열풍, 코인 공모 광풍'],[2018,2,2018,12,'공모 거품 붕괴'],[2020,6,2021,11,'디파이·NFT 열풍의 심장'],[2022,4,2022,6,'연쇄 청산 충격'],[2022,9,2022,10,'대규모 시스템 전환 이벤트'],[2024,5,2024,12,'현물 ETF 승인 기대'],[2025,6,2025,8,'기업 보유 열풍, 최고가 경신']],
+ DG:[[2017,11,2018,1,'장난 코인의 어이없는 광풍'],[2020,7,2020,8,'SNS 챌린지 밈 급등'],[2021,1,2021,5,'세계 최고 부자의 트윗 한 방에 폭등'],[2021,5,2021,6,'그 부자의 방송 출연 후 고점 붕괴'],[2024,11,2024,12,'정치 테마 밈 랠리']],
+ SL:[[2020,4,2021,1,'초고속 신생 체인 등장'],[2021,2,2021,11,'NFT 붐 최대 수혜, 100배 신화'],[2022,9,2022,12,'후원자 대형 거래소 파산에 동반 폭락'],[2023,10,2024,3,'기사회생, 밈코인 성지로 부활'],[2025,1,2025,1,'정치인 밈코인 발행 소동']],
+ XR:[[2017,3,2018,1,'은행 송금 혁신 기대 광풍'],[2018,2,2020,11,'길고 긴 겨울'],[2020,12,2021,3,'증권 당국 소송 충격'],[2023,7,2023,8,'소송 부분 승소 급등'],[2024,11,2025,1,'우호 정부 당선 기대 폭등'],[2025,3,2025,7,'소송 종결·규제 훈풍 최고가']],
+ LN:[[2020,9,2021,3,'알고리즘 안정화폐 실험, 고정 이자 신화'],[2021,7,2021,12,'생태계 폭풍 성장'],[2022,1,2022,4,'지속 가능성 경고 무시한 채 최고가'],[2022,5,2022,6,'담보 붕괴, 사흘 만에 전액 증발급 폭락']],
+ SB:[[2021,4,2021,5,'유명 밈코인 대항마 자처, 광풍 편승'],[2021,10,2021,11,'상장 러시 사상 최고가'],[2022,1,2025,12,'밈 유행 소멸 후 긴 하락']],
+ PP:[[2023,4,2023,6,'개구리 밈 신드롬 등장'],[2024,3,2024,12,'밈코인 슈퍼사이클 주역'],[2025,2,2025,12,'유동성 썰물, 밈 피로감']],
+};
+function getNews(a, idx){
+  const list = NEWS[a.id]; if (!list) return null;
+  const d = DATES[idx], ym = d.getFullYear()*12 + d.getMonth()+1;
+  for (const [fy,fm,ty,tm,txt] of list)
+    if (ym >= fy*12+fm && ym <= ty*12+tm) return txt;
+  return null;
+}
+const monthEndIdx = (y,m) =>
+  (y===2025 && m===12) ? DATES.length-1 : idxOfMonth(m===12 ? y+1 : y, m===12 ? 1 : m+1) - 1;
+
+function buildGameFromSeed(seed, days, steel){
+  ASSETS.forEach(a => a.series = buildSeries(a, seed));
+  // 판마다 바뀌는 랜덤 가명: 공유 조합 풀에서 시드로 생성 (전원 동일 · 판 내 중복 불가)
+  {
+    const arng = mulberry32((seed ^ 0x9E3779B9) | 0);
+    const pick = arr => arr[Math.floor(arng() * arr.length)];
+    const used = new Set();
+    ASSETS.forEach(a => {
+      let name;
+      do {
+        name = a.cat.startsWith('코인') ? pick(COIN_PRE) + '코인' : pick(STOCK_PRE) + pick(STOCK_SUF);
+      } while (used.has(name));
+      used.add(name);
+      a.alias = name;
+    });
+  }
+  const rng = mulberry32(seed);
+  const shuffled = arr => { const p=[...arr];
+    for (let i=p.length-1;i>0;i--){ const j=Math.floor(rng()*(i+1)); [p[i],p[j]]=[p[j],p[i]]; }
+    return p; };
+  const isCoin = a => a.cat.startsWith('코인');
+  const STOCKS = ASSETS.filter(a=>!isCoin(a)), COINS = ASSETS.filter(isCoin);
+
+  if (steel){
+    // 1) 사건 추첨 → 2) 그 시기에 존재하는 종목만 후보 → 3) 주인공 필수 + 관련 종목 우선 →
+    // 4) 주식4·코인3 비율로 채움(코인 탄생 전 시대는 주식으로 보충) → 5) 사건 기간이 반드시 겹치는 시작일
+    const ev  = EVENTS[Math.floor(rng()*EVENTS.length)];
+    const evS = idxOfMonth(ev.from[0], ev.from[1]);
+    const evE = monthEndIdx(ev.to[0], ev.to[1]);
+    const eLo = evS - (days-1), eHi = evE;                       // 이 범위의 t0는 사건과 반드시 겹침
+    const eligible = ASSETS.filter(a =>
+      Math.max(a.first + CTX, eLo) <= Math.min(a.last - (days-1), eHi));
+    const must  = eligible.filter(a => (ev.must||[]).includes(a.id));            // 주인공: 무조건 포함
+    const focus = shuffled(eligible.filter(a => ev.focus.includes(a.id) && !must.includes(a)))
+                    .slice(0, Math.max(0, 2 - must.length));
+    let picks = [...must, ...focus];
+    const fill = (pool, target, typeIsCoin) => {
+      const have = picks.filter(a => isCoin(a) === typeIsCoin).length;
+      picks = picks.concat(shuffled(pool.filter(a => !picks.includes(a))).slice(0, Math.max(0, target - have)));
+    };
+    fill(eligible.filter(isCoin), 3, true);                      // 코인 3개 목표
+    fill(eligible.filter(a=>!isCoin(a)), 4, false);              // 주식 4개 목표
+    if (picks.length < 7)                                        // 코인 없던 시대 등: 남는 자리 보충
+      picks = picks.concat(shuffled(eligible.filter(a => !picks.includes(a))).slice(0, 7 - picks.length));
+    picks = shuffled(picks);                                     // 순서도 섞어 주인공 티 제거
+    const lo = Math.max(eLo, ...picks.map(a => a.first + CTX));
+    const hi = Math.min(eHi, ...picks.map(a => a.last - (days-1)));
+    const t0 = lo + Math.floor(rng()*(hi - lo + 1));
+    return { picks, t0, event: ev };
+  }
+
+  // 일반 모드: 주식 4 + 코인 3. 공존 불가 조합(예: 루나×페페)은 자동 재추첨 — 시드 기반이라 전원 동일
+  let picks, lo, hi, guard = 0;
+  do {
+    picks = shuffled([...shuffled(STOCKS).slice(0,4), ...shuffled(COINS).slice(0,3)]);
+    lo = Math.max(...picks.map(a=>a.first)) + CTX;
+    hi = Math.min(...picks.map(a=>a.last)) - (days-1);
+  } while (lo > hi && ++guard < 100);
+  const t0 = lo + Math.floor(rng()*(hi-lo));
+  return { picks, t0, event: null };
+}
+const priceKRW = (a,idx) => Math.max(1, Math.round(a.series[idx]*a.unit));
+
+/* ════════════════════════════════════════════
+   4) 전역 상태
+   ════════════════════════════════════════════ */
+const CTX = 20;
+const fmt  = n => '₩' + Math.round(n).toLocaleString('ko-KR');
+const fmtD = d => `${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일`;
+const signed = (n, isKRW) => `${n>=0?'+':'−'}${isKRW?fmt(Math.abs(n)).slice(1):Math.abs(n).toFixed(2)}`;
+
+let MODE = 'solo';            // solo | battle
+let G = null;                 // {picks,t0,days,cash0, day, cash, pos, sel, submitted}
+let ROOM = null;              // {code, isHost}
+let roomRef = null, lastRoom = null;
+let db = null;
+const PID = (()=>{ let p = store.get('stm_pid'); if(!p){ p='p'+Math.random().toString(36).slice(2,9); store.set('stm_pid',p);} return p; })();
+
+function show(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('show'));
+  document.getElementById(id).classList.add('show'); window.scrollTo(0,0); }
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('show'),1800); }
+
+/* ════════════════════════════════════════════
+   5) Firebase 연결
+   ════════════════════════════════════════════ */
+/* ★ 방장 1회 설정: 아래 null 자리에 firebaseConfig 객체를 통째로 붙여넣으면
+     이 파일을 받는 참가자 전원이 별도 설정 없이 바로 대결 가능합니다.
+     예) const EMBEDDED_FB_CONFIG = { apiKey:"AIza...", databaseURL:"https://...", ... }; */
+const EMBEDDED_FB_CONFIG = {
+  apiKey: "AIzaSyBchOQw4mtFHnLGti2eYuv3HRACNVibwrc",
+  authDomain: "ggul-2d56e.firebaseapp.com",
+  databaseURL: "https://ggul-2d56e-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "ggul-2d56e",
+  storageBucket: "ggul-2d56e.firebasestorage.app",
+  messagingSenderId: "330797471073",
+  appId: "1:330797471073:web:29b0d6d3b2853908782120",
+  measurementId: "G-4SFG1G9VP7"
+};
+
+function tryInitFirebase(){
+  if (typeof firebase === 'undefined') return false;
+  let cfg = EMBEDDED_FB_CONFIG;
+  if (!cfg){
+    const raw = store.get('stm_fb');
+    if (!raw) return false;
+    try { cfg = JSON.parse(raw); } catch(e){ return false; }
+  }
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(cfg);
+    db = firebase.database();
+    return true;
+  } catch(e){ console.error(e); return false; }
+}
+function saveFbConfig(){
+  const raw = document.getElementById('fbConfigInput').value;
+  const m = raw.match(/\{[\s\S]*\}/);                    // 붙여넣은 코드에서 { } 블록만 추출
+  const st = document.getElementById('fbStatus'); st.style.display='block';
+  if (!m){ st.innerHTML='<b>인식 실패</b> — firebaseConfig의 중괄호 { } 블록이 보이지 않습니다. 화면의 코드를 통째로 붙여넣어 주세요.'; return; }
+  let cfg;
+  try { cfg = Function('return ('+m[0]+')')(); }         // JSON이 아닌 JS 객체 표기도 허용
+  catch(e){ st.innerHTML='<b>인식 실패</b> — 붙여넣은 내용을 해석할 수 없습니다: '+e.message; return; }
+  if (!cfg.databaseURL){ st.innerHTML='<b>databaseURL이 없습니다</b> — Realtime Database를 먼저 만든 뒤(가이드 02번), 프로젝트 설정에서 config를 다시 복사하세요. databaseURL 항목이 포함되어야 합니다.'; return; }
+  store.set('stm_fb', JSON.stringify(cfg));
+  try{ firebase.apps.forEach(a=>a.delete && a.delete()); }catch(e){}
+  if (tryInitFirebase()){
+    db.ref('.info/connected').once('value')
+      .then(()=>{ st.innerHTML='<b>연결 성공!</b> 이제 홈에서 대결 방을 만들 수 있습니다.'; })
+      .catch(e=>{ st.innerHTML='<b>연결 실패</b> — '+e.message; });
+  } else st.innerHTML='<b>초기화 실패</b> — 인터넷 연결과 config 값을 확인하세요.';
+}
+const needFb = () => { if (db || tryInitFirebase()) return false;
+  toast('먼저 Firebase 연결 설정이 필요합니다'); show('sFbGuide'); return true; };
+
+/* ════════════════════════════════════════════
+   6) 화면 전환 / 방 설정
+   ════════════════════════════════════════════ */
+let pendingMode = 'solo';
+function goSetup(kind){
+  if (kind === 'battle-join'){ if (needFb()) return; show('sJoin'); return; }
+  pendingMode = kind;
+  const isHost = kind === 'battle-host';
+  if (isHost && needFb()) return;
+  document.getElementById('cfgEyebrow').textContent = isHost ? 'HOST' : 'SOLO';
+  document.getElementById('cfgTitle').textContent = isHost ? '대결 규칙 정하기' : '연습 규칙 정하기';
+  document.getElementById('nickField').style.display = isHost ? 'block' : 'none';
+  document.getElementById('btnCfgGo').textContent = isHost ? '방 만들기' : '시작하기';
+  show('sConfig');
+}
+document.querySelectorAll('.seg').forEach(seg=>{
+  seg.addEventListener('click', e=>{
+    if (e.target.tagName!=='BUTTON') return;
+    seg.querySelectorAll('button').forEach(b=>b.classList.remove('on'));
+    e.target.classList.add('on');
+    if (seg.id === 'segLev')            // 레버리지 사용 시 배수 입력칸 표시
+      document.getElementById('levDetail').style.display = e.target.dataset.v==='1' ? 'block' : 'none';
+  });
+});
+const segVal = id => +document.querySelector('#'+id+' button.on').dataset.v;
+const setCfgCash = v => document.getElementById('cfgCash').value = v;
+const setCfgDays = v => document.getElementById('cfgDays').value = v;
+const setCfgTime = v => document.getElementById('cfgTime').value = v;
+const clampNum = (v, lo, hi, def) => { const n = parseInt(v); return isNaN(n) ? def : Math.min(hi, Math.max(lo, n)); };
+
+function confirmConfig(){
+  const cash = clampNum(document.getElementById('cfgCash').value, 100, 1000000, 1000) * 10000;  // 만원 → 원
+  const days = clampNum(document.getElementById('cfgDays').value, 2, 60, 10);
+  const steel = segVal('segMode') === 1;
+  const lev  = segVal('segLev') === 1 ? clampNum(document.getElementById('levMax').value, 2, 150, 3) : 1;
+  const tlimit = clampNum(document.getElementById('cfgTime').value, 0, 600, 0);
+  const shortOk = segVal('segShort') === 1;
+  // 입력창에 보정된 값을 되돌려 사용자에게 확정치를 보여줌
+  document.getElementById('cfgCash').value = cash/10000;
+  document.getElementById('cfgDays').value = days;
+  if (pendingMode === 'solo'){
+    MODE = 'solo';
+    const seed = (Math.random()*2**31)|0;
+    beginGame(seed, days, cash, steel, lev, shortOk, tlimit);
+  } else {
+    const nick = document.getElementById('nick').value.trim().replace(/[<>&"'`]/g,'');
+    if (!nick) return toast('닉네임을 입력해 주세요');
+    createRoom(nick, cash, days, steel, lev, shortOk, tlimit);
+  }
+}
+
+/* ════════════════════════════════════════════
+   7) 방 생성 / 참가 / 로비
+   ════════════════════════════════════════════ */
+const genCode = () => Array.from({length:4},()=> 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[Math.floor(Math.random()*31)]).join('');
+
+async function createRoom(nick, cash, days, steel, lev, shortOk, tlimit){
+  if (needFb()) return;
+  let code = genCode();
+  const exists = (await db.ref('rooms/'+code).once('value')).exists();
+  if (exists) code = genCode();
+  const seed = (Math.random()*2**31)|0;
+  await db.ref('rooms/'+code).set({
+    host: PID, created: Date.now(),
+    cfg: { cash, days, seed, steel: steel ? 1 : 0, lev: lev || 1, short: shortOk ? 1 : 0, tlimit: tlimit || 0 },
+    state: { phase:'lobby', day:0 },
+    players: { [PID]: { name:nick, total:cash, doneDay:0 } }
+  });
+  enterRoom(code, true, nick);
+}
+
+async function joinRoom(){
+  if (needFb()) return;
+  const nick = document.getElementById('joinNick').value.trim();
+  const code = document.getElementById('joinCode').value.trim().toUpperCase();
+  if (!nick) return toast('닉네임을 입력해 주세요');
+  if (code.length !== 4) return toast('코드는 4자리입니다');
+  const snap = await db.ref('rooms/'+code).once('value');
+  if (!snap.exists()) return toast('존재하지 않는 방입니다');
+  const room = snap.val();
+  if (room.kicked && room.kicked[PID]) return toast('이 방에서 강퇴되어 입장할 수 없습니다');
+  const already = room.players && room.players[PID];
+  if (room.state.phase !== 'lobby' && !already) return toast('이미 시작된 방입니다');
+  if (!already) await db.ref(`rooms/${code}/players/${PID}`).set({ name:nick, total:room.cfg.cash, doneDay:0 });
+  enterRoom(code, room.host === PID, nick);
+}
+
+function enterRoom(code, isHost, nick){
+  ROOM = { code, isHost, nick };
+  store.set('stm_room', JSON.stringify({code, nick}));
+  MODE = 'battle';
+  roomRef = db.ref('rooms/'+code);
+  roomRef.on('value', s => onRoom(s.val()));
+  show('sLobby');
+}
+function leaveRoom(){
+  stopDayTimer();
+  if (roomRef){ roomRef.off(); if (ROOM && lastRoom && lastRoom.state.phase==='lobby') db.ref(`rooms/${ROOM.code}/players/${PID}`).remove(); }
+  store.del('stm_room'); ROOM=null; roomRef=null; lastRoom=null; G=null;
+  resetToHome();
+}
+function resetToHome(){ MODE='solo'; G=null; checkResume(); show('sHome'); }
+
+function renderLobby(room){
+  document.getElementById('lobbyCode').textContent = ROOM.code;
+  document.getElementById('lobbyRule').textContent =
+    `자본금 ${fmt(room.cfg.cash)} · ${room.cfg.days}거래일 · 종목 7개` +
+    (room.cfg.steel ? ' · 🔥강철의 심장' : '') + ((room.cfg.lev||1) > 1 ? ` · ⚡레버리지 ${room.cfg.lev}x` : '') + (room.cfg.short ? ' · 📉숏' : '') + (room.cfg.tlimit ? ` · ⏱${room.cfg.tlimit}초/일` : '');
+  const players = Object.entries(room.players||{});
+  document.getElementById('lobbyList').innerHTML = players.map(([pid,p])=>`
+    <div class="pl ${pid===PID?'me':''}"><span class="who"><span class="dot"></span>${p.name}${pid===room.host?' <span style="color:var(--amber);font-size:11px">HOST</span>':''}</span>
+    <span class="stat" style="color:var(--dim)">대기</span></div>`).join('');
+  const isHost = room.host === PID;
+  document.getElementById('btnStart').style.display = isHost ? 'block' : 'none';
+  document.getElementById('btnStart').disabled = players.length < 2;
+  document.getElementById('btnStart').textContent = players.length<2 ? '2명 이상 모이면 시작 가능' : `전원 모였으면 시작 ⚔ (${players.length}명)`;
+  document.getElementById('lobbyWait').style.display = isHost ? 'none' : 'block';
+  renderChat(room);
+  // 참여 링크: 호스팅된 주소일 때만 생성 가능 (파일로 열면 남이 접속할 주소가 없음)
+  const hint = document.getElementById('linkHint');
+  const linkBtn = document.getElementById('joinLink');
+  if (linkBtn.dataset.done !== ROOM.code){   // 방 코드 기준: 새 방이면 링크 재생성
+    linkBtn.dataset.done = ROOM.code;
+    linkBtn.style.display = 'none';
+    if (location.protocol.startsWith('http')){
+      const url = location.origin + location.pathname + '?room=' + ROOM.code;
+      linkBtn.dataset.url = url;
+      linkBtn.textContent = '🔗 ' + url.replace(/^https?:\/\//,'') + '\u2002— 누르면 복사';
+      linkBtn.style.display = 'block';
+      hint.textContent = '링크로 접속하면 방 코드가 자동 입력됩니다';
+    } else {
+      hint.textContent = '파일로 여는 중에는 링크를 만들 수 없어요 (호스팅 주소로 열면 자동 생성 · 코드 입장은 지금도 가능)';
+    }
+  }
+}
+
+// 참여 링크 탭 → 클립보드 복사 (미지원 브라우저는 예비 방식으로 시도)
+async function copyJoinLink(){
+  const url = document.getElementById('joinLink').dataset.url;
+  if (!url) return;
+  try {
+    await navigator.clipboard.writeText(url);
+    toast('참여 링크가 복사되었습니다 📋');
+  } catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.focus(); ta.select();
+    try { document.execCommand('copy'); toast('참여 링크가 복사되었습니다 📋'); }
+    catch(e2){ toast('복사 실패 — 링크를 길게 눌러 직접 복사해 주세요'); }
+    document.body.removeChild(ta);
+  }
+}
+
+function hostStart(){
+  if (!ROOM || !ROOM.isHost) return;
+  db.ref(`rooms/${ROOM.code}/state`).set({ phase:'playing', day:1 });
+}
+
+/* ════════════════════════════════════════════
+   8) 실시간 방 상태 처리 (동기화의 심장부)
+   ════════════════════════════════════════════ */
+function onRoom(room){
+  if (!room){ toast('방이 삭제되었습니다'); leaveRoom(); return; }
+  if (ROOM && (!room.players || !room.players[PID])) return kickedOut();   // 강퇴 감지
+  lastRoom = room;
+  const ph = room.state.phase;
+  if (ph === 'lobby'){ renderLobby(room); return; }
+  if (ph === 'playing'){
+    // 정산 판정을 데이터 기준으로: 전원이 마지막 날 마감을 기록했으면 done 신호를 기다리지 않고 결과 표시
+    const ps = Object.values(room.players||{});
+    if (G && ps.length && ps.every(p => (p.doneDay||0) >= room.cfg.days)){
+      maybeAdvance(room);          // 다른 참가자를 위해 서버에도 done 기록 시도
+      showResult(room);
+      return;
+    }
+    if (!G){                                        // 시작(또는 재입장) 신호: 시드로 전원 동일 재현 후 게임 화면 진입
+      beginGame(room.cfg.seed, room.cfg.days, room.cfg.cash, room.cfg.steel, room.cfg.lev, room.cfg.short, room.cfg.tlimit);
+      G.day = room.state.day;                       // 재입장자는 현재 진행일로 점프
+      const me = room.players && room.players[PID];
+      if (me && me.pos){                            // 서버에 저장된 지갑·포지션 복원 (재접속 리셋 수정)
+        G.cash = typeof me.cash==='number' ? me.cash : G.cash;
+        for (const id in me.pos) if (G.pos[id]) G.pos[id] = { q: me.pos[id].q||0, cost: me.pos[id].cost||0 };
+        G.bankrupt = !!me.bankrupt;
+      }
+      if (me && (me.doneDay||0) >= room.state.day){ G.submitted = true; renderWait(room); }
+      else {
+        show('sGame'); renderAll(true);
+        if (G.bankrupt){ if (!G.submitted) submitDay(); }   // 청산 상태 재접속: 자동 마감
+        else startDayTimer();
+      }
+      updateRankStrip(room);
+      maybeAdvance(room);
+      return;
+    }
+    if (room.state.day > G.day){                                       // 다음 날 열림
+      G.day = room.state.day; G.submitted = false;
+      show('sGame');
+      showRecap();                     // 개장 브리핑 (청산 전 상태로 손익 공개)
+      const wasBankrupt = G.bankrupt;
+      checkMarginCall();               // 레버리지 파산 판정
+      renderAll(true);
+      if (G.bankrupt){                 // 청산 상태: 거래 불가 → 자동 마감 (방이 안 멈춤)
+        if (wasBankrupt) toast('💀 청산 상태 — 자동 마감');
+        if (!G.submitted) submitDay();
+      } else startDayTimer();
+    } else if (G.submitted){ renderWait(room); }
+    else if (document.getElementById('sGame').classList.contains('show')) renderAll();
+    else { show('sGame'); renderAll(); }   // 자가치유: 미제출인데 대기 화면 등에 갇혀 있으면 거래 화면으로 복귀
+    updateRankStrip(room);
+    maybeAdvance(room);
+    return;
+  }
+  if (ph === 'done'){ if (!G) beginGame(room.cfg.seed, room.cfg.days, room.cfg.cash, room.cfg.steel, room.cfg.lev, room.cfg.short); showResult(room); }
+}
+
+// 전원 마감 확인 → 다음 날 (누가 실행해도 같은 결과가 나오는 안전한 전진)
+function maybeAdvance(room){
+  const d = room.state.day;
+  const players = Object.values(room.players||{});
+  if (!d || !players.length || !players.every(p => (p.doneDay||0) >= d)) return;
+  if (d >= room.cfg.days){
+    db.ref(`rooms/${ROOM.code}/state/phase`).transaction(cur => {
+      if (cur === null || cur === 'playing') return 'done';  // 캐시 없으면 서버 검증에 맡기고 시도
+      return;                                                 // 이미 done: 아무것도 쓰지 않고 중단
+    });
+  } else {
+    db.ref(`rooms/${ROOM.code}/state/day`).transaction(cur => {
+      if (cur === null || cur === d) return d + 1;            // 정상 전진 (null이면 서버가 실제값으로 재검증)
+      return;                                                 // 이미 전진됨: 중단 — 절대 null을 쓰지 않음
+    });
+  }
+}
+
+function renderWait(room){
+  document.getElementById('waitTitle').textContent = `DAY ${room.state.day} 마감`;
+  const d = room.state.day;
+  document.getElementById('waitList').innerHTML = Object.entries(room.players||{})
+    .sort((a,b)=>(b[1].total||0)-(a[1].total||0))
+    .map(([pid,p])=>{
+      const done = (p.doneDay||0) >= d;
+      const kick = (room.host === PID && pid !== PID)
+        ? `<button class="kick-btn" onclick="kickPlayer('${pid}')">✕</button>` : '';
+      return `<div class="pl ${pid===PID?'me':''}">
+        <span class="who"><span class="dot ${done?'':'wait'}"></span>${esc(p.name)}</span>
+        <span style="display:flex;align-items:center;gap:8px"><span class="stat flat">${done?'마감 ✓':'거래 중···'}</span>${kick}</span></div>`;
+    }).join('');
+  renderChat(room);
+  show('sWait');
+}
+
+/* ════════════════════════════════════════════
+   9) 게임 본체 (솔로/대결 공용)
+   ════════════════════════════════════════════ */
+function beginGame(seed, days, cash, steel, lev, shortOk, tlimit){
+  const { picks, t0, event } = buildGameFromSeed(seed, days, steel);
+  G = { seed, days, cash0:cash, picks, t0, event, steel:!!steel, lev:lev||1, short:!!shortOk, tlimit:tlimit||0, bankrupt:false, day:1, cash, sel:0, submitted:false,
+        pos:Object.fromEntries(picks.map(a=>[a.id,{q:0,cost:0}])) };
+  document.getElementById('lamps').innerHTML = Array.from({length:days},()=>'<div class="lamp"></div>').join('');
+  // 거래 배수 선택 버튼: 레버리지 방에서만 1x~한도 생성, 기본 1x
+  const lp = document.getElementById('levPick');
+  if ((lev||1) > 1){
+    document.getElementById('levBtns').innerHTML = lev <= 10
+      ? Array.from({length:lev}, (_,i)=>`<button data-v="${i+1}" onclick="setTradeLev(${i+1})">${i+1}x</button>`).join('')
+      : `<input type="range" id="levSlider" min="1" max="${lev}" value="1" step="1"
+           oninput="setTradeLev(+this.value)" style="width:100%;accent-color:var(--amber);height:30px">`;
+    lp.style.display = 'block';
+    tradeLev = 1; setTradeLev(1);
+  } else { lp.style.display = 'none'; tradeLev = 1; }
+  document.getElementById('brandTag').textContent =
+    (MODE==='battle' ? `BATTLE · ${ROOM.code}` : 'TIME MACHINE') + (steel ? ' · 🔥' : '');
+  if (MODE === 'solo'){ show('sGame'); renderAll(); startDayTimer(); }
+}
+
+const curIdx = () => G.t0 + G.day - 1;
+const px = a => priceKRW(a, curIdx());
+const pxPrev = a => priceKRW(a, curIdx()-1);
+const totalAssets = () => G.cash + G.picks.reduce((s,a)=>s + G.pos[a.id].q*px(a), 0);
+
+function renderAll(flash){
+  const a = G.picks[G.sel], p = G.pos[a.id];
+  document.getElementById('dayLabel').textContent = `DAY ${G.day}/${G.days}`;
+  [...document.querySelectorAll('.lamp')].forEach((el,i)=>el.classList.toggle('on', i<G.day));
+  const tot = totalAssets(), diff = tot-G.cash0, pct = diff/G.cash0*100;
+  document.getElementById('totalVal').textContent = fmt(tot);
+  const tc = document.getElementById('totalChg');
+  tc.textContent = `${signed(diff,true)} (${diff>=0?'+':''}${pct.toFixed(2)}%)`;
+  tc.className = diff>0?'pos':diff<0?'neg':'flat';
+  document.getElementById('cashVal').textContent = fmt(G.cash);
+  document.getElementById('tabs').innerHTML = G.picks.map((x,i)=>{
+    const c=px(x), pv=pxPrev(x), ch=(c-pv)/pv*100, cls=ch>0?'pos':ch<0?'neg':'flat';
+    return `<button class="tab${i===G.sel?' active':''}" onclick="selectTab(${i})">
+      <span>${x.alias}${G.pos[x.id].q!==0?'<span class="hold-dot"></span>':''}</span>
+      <span class="t-chg ${cls}">${ch>0?'▲':ch<0?'▼':'—'} ${Math.abs(ch).toFixed(1)}%</span></button>`;
+  }).join('');
+  const c=px(a), pv=pxPrev(a), ch=c-pv, chp=ch/pv*100;
+  document.getElementById('qName').textContent = a.alias;
+  document.getElementById('qCat').textContent = a.cat;
+  const pxEl = document.getElementById('qPx'); pxEl.textContent = fmt(c);
+  if (flash){ pxEl.classList.remove('flash-up','flash-dn'); void pxEl.offsetWidth;
+    pxEl.classList.add(ch>=0?'flash-up':'flash-dn'); }
+  const qc = document.getElementById('qChg');
+  qc.textContent = `${ch>=0?'▲':'▼'} ${fmt(Math.abs(ch)).slice(1)} (${ch>=0?'+':''}${chp.toFixed(2)}%)`;
+  qc.className = 'chg '+(ch>0?'pos':ch<0?'neg':'flat');
+  const qEl = document.getElementById('pQty');
+  qEl.textContent = p.q < 0 ? `📉 숏 ${(-p.q).toLocaleString()}주` : p.q.toLocaleString()+'주';
+  qEl.className = 'v ' + (p.q < 0 ? 'neg' : '');
+  document.getElementById('pAvg').textContent = p.q ? fmt(p.cost/p.q) : '—';
+  const pnlEl = document.getElementById('pPnl');
+  if (p.q){ const pnl=p.q*c-p.cost, pp=pnl/Math.abs(p.cost)*100;
+    pnlEl.textContent = `${signed(pnl,true)} (${pnl>=0?'+':''}${pp.toFixed(2)}%)`;
+    pnlEl.className = 'v '+(pnl>0?'pos':pnl<0?'neg':'flat');
+  } else { pnlEl.textContent='—'; pnlEl.className='v flat'; }
+  updateTradeButtons();
+  // 레버리지 상태줄 (사용 방에서만)
+  const levRow = document.getElementById('levRow');
+  if ((G.lev||1) > 1){
+    levRow.style.display = 'flex';
+    const pl = document.getElementById('pLev');
+    if (G.bankrupt){ pl.textContent = '💀 파산 (청산 완료)'; pl.className = 'v neg'; }
+    else {
+      const absVal = G.picks.reduce((s,x)=>s + Math.abs(G.pos[x.id].q)*px(x), 0);
+      const eq = totalAssets();
+      const expo = eq > 0 ? absVal/eq : 0;
+      pl.textContent = `노출 ${expo.toFixed(2)}x / 한도 ${G.lev}x` + (G.cash < 0 ? ` · 차입 ${fmt(-G.cash)}` : '');
+      pl.className = 'v ' + (expo > G.lev*0.8 ? 'neg' : expo > 1 ? 'pos' : 'flat');
+    }
+  } else levRow.style.display = 'none';
+  const nw = getNews(a, curIdx());
+  const nEl = document.getElementById('qNews');
+  if (nw){ nEl.style.display='block'; nEl.textContent = '📰 당시 소문 — ' + nw; }
+  else nEl.style.display='none';
+  document.getElementById('btnNext').textContent =
+    G.day>=G.days ? '최종 마감 · 정산하기 ✓' : `DAY ${G.day} 장 마감 →`;
+  drawChart(a);
+}
+
+function drawChart(a){
+  const cv=document.getElementById('chart'), dpr=devicePixelRatio||1;
+  const W=cv.clientWidth, H=190; if(!W) return;
+  cv.width=W*dpr; cv.height=H*dpr;
+  const g=cv.getContext('2d'); g.scale(dpr,dpr); g.clearRect(0,0,W,H);
+  const data=[]; for(let i=G.t0-CTX;i<=curIdx();i++) data.push(priceKRW(a,i));
+  const totalPts=CTX+G.days, pad={l:8,r:56,t:10,b:18};
+  const lo=Math.min(...data)*.995, hi=Math.max(...data)*1.005;
+  const X=i=>pad.l+(W-pad.l-pad.r)*i/(totalPts-1);
+  const Y=v=>pad.t+(H-pad.t-pad.b)*(1-(v-lo)/(hi-lo));
+  g.fillStyle='rgba(245,185,74,.05)';
+  g.fillRect(X(CTX),pad.t,X(totalPts-1)-X(CTX),H-pad.t-pad.b);
+  g.font='10px IBM Plex Mono, monospace'; g.strokeStyle='#1b2130';
+  for(let k=0;k<=3;k++){ const v=lo+(hi-lo)*k/3, y=Y(v);
+    g.beginPath(); g.moveTo(pad.l,y); g.lineTo(W-pad.r,y); g.stroke();
+    g.fillStyle='#5b6478'; g.fillText(Math.round(v).toLocaleString(), W-pad.r+5, y+3); }
+  g.lineWidth=1.5; g.strokeStyle='#4a5468'; g.beginPath();
+  for(let i=0;i<=CTX&&i<data.length;i++){ const x=X(i),y=Y(data[i]); i?g.lineTo(x,y):g.moveTo(x,y); }
+  g.stroke();
+  const upTrend = data[data.length-1] >= data[CTX];
+  g.strokeStyle = upTrend?'#ff4d57':'#4d7cff'; g.lineWidth=2; g.beginPath();
+  for(let i=CTX;i<data.length;i++){ const x=X(i),y=Y(data[i]); i===CTX?g.moveTo(x,y):g.lineTo(x,y); }
+  g.stroke();
+  g.fillStyle = upTrend?'#ff4d57':'#4d7cff';
+  g.beginPath(); g.arc(X(data.length-1),Y(data[data.length-1]),3.5,0,7); g.fill();
+  g.fillStyle='#8b94a7'; g.font='9.5px IBM Plex Mono, monospace';
+  g.fillText('D-20', X(0)-2, H-5);
+  g.fillStyle='#f5b94a'; g.fillText('시작', X(CTX)-8, H-5); g.fillText('오늘', X(data.length-1)-8, H-5);
+}
+
+/* ── 주문 (비율 슬라이더 + 거래 배수 선택) ── */
+let orderPct = 50;
+let tradeLev = 1;   // 이번 거래에 적용할 배수 (기본 1x, 방 한도까지 선택 가능)
+function setTradeLev(v){
+  tradeLev = Math.min(v, G && G.lev || 1);
+  document.getElementById('levPickVal').textContent = tradeLev + 'x';
+  [...document.getElementById('levBtns').children].forEach(b => {
+    if (b.dataset && b.dataset.v) b.classList.toggle('on', +b.dataset.v === tradeLev); });
+  const sl = document.getElementById('levSlider');
+  if (sl) sl.value = tradeLev;
+  updateTradeButtons();
+}
+function onPct(v){ orderPct = +v; updateTradeButtons(); }
+function setPct(v){ orderPct = v; document.getElementById('pctSlider').value = v; updateTradeButtons(); }
+function capShares(a, c){   // 이 종목이 가질 수 있는 최대 |포지션|: (순자산×배수 − 타종목 노출)/주가
+  const othersAbs = G.picks.reduce((s,x)=> x===a ? s : s + Math.abs(G.pos[x.id].q)*px(x), 0);
+  const L = Math.min(tradeLev, G.lev||1);
+  return Math.max(0, Math.floor((totalAssets()*L - othersAbs)/c));
+}
+function buyQty(){ const a=G.picks[G.sel], c=px(a), p=G.pos[a.id];
+  if (G.bankrupt) return 0;
+  if (p.q < 0){                                       // 숏 보유 중 매수 = 숏 청산 (잔량의 %, 0을 넘지 않음)
+    const base = -p.q;
+    return Math.min(base, Math.max(1, Math.round(base*orderPct/100)));
+  }
+  const maxD = capShares(a,c) - p.q;                  // 추가 매수 여력의 %
+  if (maxD < 1) return 0;
+  return Math.min(maxD, Math.max(1, Math.floor(maxD*orderPct/100))); }
+function sellQty(){ const a=G.picks[G.sel], c=px(a), p=G.pos[a.id];
+  if (G.bankrupt) return 0;
+  if (p.q > 0)                                        // 롱 보유 중 매도 = 보유량의 % (0을 넘지 않음)
+    return Math.min(p.q, Math.max(1, Math.round(p.q*orderPct/100)));
+  if (!G.short) return 0;
+  const maxD = capShares(a,c) + p.q;                  // 숏 (추가) 진입 여력의 %  (p.q ≤ 0)
+  if (maxD < 1) return 0;
+  return Math.min(maxD, Math.max(1, Math.floor(maxD*orderPct/100))); }
+function applyTrade(p, dq, c){                        // 부호 있는 체결: 원가(cost)는 순투입금
+  const q0 = p.q, q1 = q0 + dq;
+  G.cash -= dq*c;
+  if (q1 === 0) p.cost = 0;
+  else if (q0 === 0 || (q0>0) !== (q1>0)) p.cost = q1*c;   // 신규 진입·방향 전환: 새 기준가
+  else if (Math.abs(q1) > Math.abs(q0)) p.cost += dq*c;    // 증량: 원가 가산
+  else p.cost *= q1/q0;                                     // 감량: 비례 축소
+  p.q = q1;
+}
+function updateTradeButtons(){
+  if (!G) return;
+  document.getElementById('pctLabel').textContent = orderPct + '%';
+  const bb = document.getElementById('btnBuy'), bs = document.getElementById('btnSell');
+  if (G.bankrupt){
+    bb.textContent = '💀 파산'; bs.textContent = '💀 파산';
+    bb.disabled = bs.disabled = true; return;
+  }
+  const bq = buyQty(), sq = sellQty();
+  const p = G.pos[G.picks[G.sel].id];
+  bb.textContent = !bq ? '매수 불가'
+    : (p.q < 0 ? `숏 청산 ${bq.toLocaleString()}주` : `매수 ${bq.toLocaleString()}주`);
+  bs.textContent = !sq ? (G.short && p.q===0 ? '숏 불가' : '매도 불가')
+    : (p.q > 0 ? `매도 ${sq.toLocaleString()}주`
+       : (p.q < 0 ? `숏 추가 ${sq.toLocaleString()}주` : `숏 진입 ${sq.toLocaleString()}주`));
+  bb.disabled = !bq || G.submitted;
+  bs.disabled = !sq || G.submitted;
+}
+function selectTab(i){ G.sel=i; renderAll(); }
+function trade(dir){
+  if (G.submitted) return toast('오늘 장은 이미 마감했습니다');
+  if (G.bankrupt) return;
+  const a=G.picks[G.sel], p=G.pos[a.id], c=px(a);
+  const q = dir>0 ? buyQty() : sellQty();
+  if (q < 1) return toast(dir>0 ? '매수 한도가 없습니다' : '매도 가능 수량이 없습니다');
+  const q0 = p.q;                                     // 거래 전 포지션
+  applyTrade(p, dir>0 ? q : -q, c);
+  const L = Math.min(tradeLev, G.lev||1);
+  if (dir>0) toast(q0 < 0 ? `${a.alias} 숏 ${q.toLocaleString()}주 청산`
+                          : `${a.alias} ${q.toLocaleString()}주 매수${L>1?` · ${L}x`:''}`);
+  else toast(q0 > 0 ? `${a.alias} ${q.toLocaleString()}주 매도`
+                    : `${a.alias} 숏 ${q.toLocaleString()}주 ${q0<0?'추가':'진입'} (하락 베팅)`);
+  if (MODE==='battle') savePortfolio();
+  renderAll();
+}
+
+/* ── 하루 마감 ── */
+function submitDay(){
+  if (MODE==='solo'){
+    if (G.day>=G.days) return showResult(null);
+    G.day++;
+    showRecap();
+    checkMarginCall();
+    renderAll(true);
+    if (G.bankrupt){                   // 혼자 모드: 청산 시 남은 날 스킵 → 바로 정산
+      hideRecap();
+      toast('💀 청산 — 남은 날을 건너뛰고 정산합니다');
+      return showResult(null);
+    }
+    startDayTimer();
+    return;
+  }
+  if (G.submitted) return;
+  G.submitted = true;
+  stopDayTimer();
+  const myDay = G.day;                                  // 제출 시점의 날짜 기억 (경합 방지용)
+  db.ref(`rooms/${ROOM.code}/players/${PID}`).update({
+    name: ROOM.nick, total: totalAssets(), doneDay: G.day, cash: G.cash, pos: G.pos, bankrupt: G.bankrupt
+  }).then(()=>{
+    // 응답이 늦게 와서 이미 다음 날로 넘어간 상태라면 아무것도 하지 않음 (거래 화면을 덮어쓰던 버그 수정)
+    if (G && G.submitted && G.day === myDay && lastRoom){
+      renderWait(lastRoom);
+      maybeAdvance({...lastRoom, players:{...lastRoom.players,[PID]:{...(lastRoom.players[PID]||{}),doneDay:myDay,total:totalAssets()}}});
+    }
+  })
+    .catch(err => { G.submitted = false; toast('마감 전송 실패 — 다시 눌러주세요'); console.error(err); });
+}
+
+/* ── 하루 제한시간: 만료 시 자동 장 마감 (기기별 로컬 카운트다운) ── */
+let dayTimer = null, dayDeadline = 0;
+function startDayTimer(){
+  clearInterval(dayTimer); dayTimer = null;
+  const el = document.getElementById('dayTimer');
+  const lim = G && G.tlimit || 0;
+  if (!lim || !G || G.submitted){ if (el) el.textContent = ''; return; }
+  dayDeadline = Date.now() + lim*1000;
+  const tick = () => {
+    const left = Math.ceil((dayDeadline - Date.now())/1000);
+    if (left <= 0){
+      clearInterval(dayTimer); dayTimer = null;
+      el.textContent = '';
+      if (G && !G.submitted){ toast('⏱ 제한시간 종료 — 자동 마감'); submitDay(); }
+      return;
+    }
+    el.textContent = '⏱ ' + left;
+    el.style.color = left <= 10 ? 'var(--up)' : 'var(--dim)';
+  };
+  tick();
+  dayTimer = setInterval(tick, 500);
+}
+function stopDayTimer(){
+  clearInterval(dayTimer); dayTimer = null;
+  const el = document.getElementById('dayTimer'); if (el) el.textContent = '';
+}
+
+/* ── 강퇴: 방장이 대기 화면에서 두 번 눌러 확정 ── */
+let kickArm = null, kickArmTimer = null;
+function kickPlayer(pid){
+  if (!ROOM || !lastRoom || lastRoom.host !== PID || pid === PID) return;
+  if (kickArm !== pid){
+    kickArm = pid;
+    clearTimeout(kickArmTimer);
+    kickArmTimer = setTimeout(()=>{ kickArm = null; }, 3000);
+    const nm = lastRoom.players && lastRoom.players[pid] ? lastRoom.players[pid].name : '';
+    return toast(`한 번 더 누르면 ${nm} 강퇴`);
+  }
+  kickArm = null; clearTimeout(kickArmTimer);
+  db.ref(`rooms/${ROOM.code}/kicked/${pid}`).set(true);
+  db.ref(`rooms/${ROOM.code}/players/${pid}`).remove()
+    .then(()=>toast('강퇴 완료'))
+    .catch(()=>toast('강퇴 실패 — 다시 시도'));
+}
+function kickedOut(){
+  if (roomRef){ roomRef.off(); roomRef = null; }
+  stopDayTimer(); hideRecap();
+  store.del('stm_room'); ROOM = null; lastRoom = null; G = null;
+  toast('방장에 의해 퇴장되었습니다');
+  resetToHome();
+}
+
+/* ── 마진콜: 하루가 열렸을 때 순자산 0 이하면 전량 청산·파산 ── */
+function checkMarginCall(){
+  if (!G || G.bankrupt) return;
+  if ((G.lev||1) <= 1 && !G.short) return;          // 레버리지도 숏도 없으면 파산 불가
+  if (totalAssets() <= 0){
+    // 현재가로 전량 청산 → 남는 것은 (음수일 수 있는) 순자산. 손실을 그대로 정산에 반영.
+    G.picks.forEach(a => { G.cash += G.pos[a.id].q * px(a); G.pos[a.id].q = 0; G.pos[a.id].cost = 0; });
+    G.bankrupt = true;
+    toast('💀 증거금 전액 소진 — 강제 청산 (손실 확정)');
+    if (MODE==='battle') savePortfolio();
+  }
+}
+
+/* 매 거래·청산 시 지갑을 서버에 저장 (재접속 복원용 · 총자산은 스포 방지 위해 마감 때만 갱신) */
+function savePortfolio(){
+  if (MODE !== 'battle' || !ROOM || !db) return;
+  db.ref(`rooms/${ROOM.code}/players/${PID}`)
+    .update({ cash: G.cash, pos: G.pos, bankrupt: G.bankrupt }).catch(()=>{});
+}
+const esc = s => String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+
+/* ── 마감자 채팅: 그날 마감한 사람끼리, 날짜별 분리 ── */
+function sendChat(srcId){
+  const el = document.getElementById(srcId || 'chatInput');
+  const msg = el.value.trim();
+  if (!msg || !ROOM || !db) return;
+  const inLobby = lastRoom && lastRoom.state && lastRoom.state.phase === 'lobby';
+  if (!inLobby && (!G || !G.submitted)) return toast('오늘 장을 마감해야 채팅할 수 있습니다');
+  db.ref(`rooms/${ROOM.code}/chat`).push({ pid: PID, name: ROOM.nick, msg, day: inLobby ? 0 : G.day, ts: Date.now() })
+    .catch(()=>toast('전송 실패 — 다시 시도해 주세요'));
+  el.value = '';
+}
+function renderChat(room){
+  const msgs = Object.values(room.chat||{})
+    .sort((a,b) => (a.ts||0)-(b.ts||0)).slice(-80);          // 로비부터 게임 끝까지 유지 (새 방이면 자동 리셋)
+  const body = msgs.length
+    ? msgs.map(m => `<div class="chat-msg ${m.pid===PID?'mine':''}"><span class="cd">${m.day ? 'D'+m.day : '로비'}</span><span class="cn">${esc(m.name)}</span>${esc(m.msg)}</div>`).join('')
+    : '<div class="chat-empty">아직 메시지가 없습니다 — 첫 메시지를 남겨보세요</div>';
+  for (const id of ['chatList','lobbyChatList']){
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.innerHTML = body;
+    el.scrollTop = el.scrollHeight;
+  }
+}
+
+/* ── 상단 랭킹 띠: 이름·순위만 (퍼센트 비공개, 정산 때 전면 공개) ── */
+function updateRankStrip(room){
+  const el = document.getElementById('rankStrip');
+  if (MODE !== 'battle' || !room || !room.players){ el.style.display = 'none'; return; }
+  const ranks = Object.entries(room.players)
+    .map(([pid,p]) => ({pid, name:p.name, total:p.total||0}))
+    .sort((a,b) => b.total - a.total);
+  el.style.display = 'flex';
+  el.innerHTML = ranks.map((r,i) =>
+    `<span class="rk ${r.pid===PID?'me':''} ${i===0?'top':''}">${i===0?'👑 ':''}${i+1}위 ${r.name}</span>`).join('');
+}
+
+/* ── 화면 투어: 데모 판 위에서 스포트라이트로 기능을 하나씩 안내 ── */
+let tourIdx = -1;
+const TOUR = [
+ { el: ()=>document.querySelector('.board-total'), t:'총 자산 현황판',
+   d:'현금과 평가액을 합친 내 순자산입니다. 시작 자본 대비 손익이 색으로 표시되고, 위의 램프는 오늘이 며칠째인지 알려줍니다.' },
+ { el: ()=>document.getElementById('rankStrip'), t:'실시간 랭킹',
+   d:'대결 참가자들의 순위입니다. 등수만 공개, 수익률은 정산 때까지 비밀 — 👑이 현재 1위, 밝은 칩이 나입니다.' },
+ { el: ()=>document.getElementById('tabs'), t:'종목 탭 (7종)',
+   d:'이번 판에 배정된 주식 4 + 코인 3. 가명 뒤에 실제 기업·코인이 숨어 있습니다. 옆 숫자는 오늘 등락률, 점이 붙으면 보유 중.' },
+ { el: ()=>document.querySelector('.quote'), t:'현재가',
+   d:'선택 종목의 오늘 종가와 전일 대비 변화. 빨강=상승, 파랑=하락 (한국 증권 앱과 같은 규칙).' },
+ { el: ()=>document.getElementById('qNews'), t:'당시 소문 📰',
+   d:'그 시기의 실제 호재·악재를 실명·연도 없이 흐릿하게 전합니다. 이 소문으로 "지금이 언제인지" 추리하는 게 핵심 재미!' },
+ { el: ()=>document.getElementById('chart'), t:'차트',
+   d:'회색 선 = 시작 전 20일(참고용), 색 선 = 게임 진행 구간. 날짜 축은 끝까지 비공개입니다.' },
+ { el: ()=>document.getElementById('pQty').closest('.card'), t:'내 포지션',
+   d:'보유 수량·평균 단가·평가 손익. 숏이면 📉로, 레버리지 사용 시 노출 배수·차입금이 표시됩니다. 노출이 빨간색이면 청산 위험 구간.' },
+ { el: ()=>document.getElementById('levPick'), t:'거래 레버리지 ⚡',
+   d:'이번 거래에 몇 배를 쓸지 직접 선택합니다. 기본 1x — 배수를 눌러야만 빚투가 됩니다. 순자산이 0 이하로 떨어지면 강제 청산 + 부채 확정!' },
+ { el: ()=>document.querySelector('.slider-wrap'), t:'비율 주문 슬라이더',
+   d:'수량 대신 비율로 주문합니다. 매수 = 매수 여력의 %, 매도 = 보유량의 %. 아래 25/50/75/100% 버튼으로 한 번에.' },
+ { el: ()=>document.querySelector('.trade'), t:'매수 · 매도',
+   d:'버튼에 실제 체결 주수가 미리 표시됩니다. 📉공매도 방에서는 보유 0이어도 매도(=숏 진입)가 되고, 가격이 내리면 이익입니다.' },
+ { el: ()=>document.getElementById('btnNext'), t:'장 마감',
+   d:'오늘 거래 끝! 전원이 마감해야 다음 날이 열립니다. 대기 중엔 마감자 채팅, 새 날엔 전 종목 등락 브리핑이 5초간 나옵니다.' },
+];
+function startTour(){
+  MODE = 'solo';
+  beginGame(20260703, 10, 10000000, false, 3, true);   // 데모 판: 레버리지·숏 UI 모두 표시
+  const a = G.picks[0], c = px(a);                      // 데모 보유 생성 (손익 표시용)
+  const q = Math.max(1, Math.floor(G.cash*0.3/c));
+  G.pos[a.id] = { q, cost: Math.round(q*c*0.94) };      // 약간의 수익 상태로 연출
+  G.cash -= q*c;
+  G.day = 3; renderAll();
+  const rs = document.getElementById('rankStrip');      // 랭킹 띠 데모
+  rs.style.display = 'flex';
+  rs.innerHTML = '<span class="rk top">👑 1위 여의도늑대</span><span class="rk me">2위 나</span><span class="rk">3위 강남불개미</span>';
+  const n = document.getElementById('qNews');           // 소문 없는 시기면 예시 문구
+  if (n.style.display === 'none'){ n.style.display='block'; n.textContent='📰 당시 소문 — (예시) 기술주 광풍, 묻지마 매수 행렬'; }
+  show('sGame');
+  tourIdx = -1;
+  document.getElementById('tourOv').style.display = 'block';
+  tourNext();
+}
+function tourNext(){
+  tourIdx++;
+  while (tourIdx < TOUR.length){                        // 숨겨진 요소는 건너뜀
+    const el = TOUR[tourIdx].el();
+    if (el && el.getClientRects().length) break;
+    tourIdx++;
+  }
+  if (tourIdx >= TOUR.length) return endTour();
+  const step = TOUR[tourIdx], el = step.el();
+  el.scrollIntoView({ behavior:'smooth', block:'center' });
+  setTimeout(()=>{
+    const r = el.getBoundingClientRect(), pad = 8;
+    const hole = document.getElementById('tourHole');
+    hole.style.left = (r.left-pad)+'px';  hole.style.top = (r.top-pad)+'px';
+    hole.style.width = (r.width+pad*2)+'px'; hole.style.height = (r.height+pad*2)+'px';
+    const tip = document.getElementById('tourTip');
+    tip.querySelector('.tt-step').textContent  = `${tourIdx+1} / ${TOUR.length}`;
+    tip.querySelector('.tt-title').textContent = step.t;
+    tip.querySelector('.tt-text').textContent  = step.d;
+    const below = r.top + r.height/2 < innerHeight/2;    // 말풍선: 요소가 위쪽이면 아래에, 아래쪽이면 위에
+    if (below){ tip.style.top = Math.min(innerHeight-230, r.bottom+pad+14)+'px'; tip.style.bottom = 'auto'; }
+    else { tip.style.bottom = Math.max(20, innerHeight-r.top+pad+14)+'px'; tip.style.top = 'auto'; }
+  }, 420);
+}
+function endTour(){
+  document.getElementById('tourOv').style.display = 'none';
+  document.getElementById('rankStrip').style.display = 'none';
+  toast('투어 완료! 이제 실전입니다 🎉');
+  resetToHome();
+}
+
+/* ── 개장 브리핑: 하루가 열릴 때 전 종목 등락률 5초 공개 ── */
+let recapTimer = null;
+function showRecap(){
+  if (!G || G.day < 2) return;
+  const i = curIdx();
+  document.getElementById('recapDay').textContent = G.day;
+  document.getElementById('recapList').innerHTML = G.picks.map(a=>{
+    const c = priceKRW(a,i), pv = priceKRW(a,i-1), ch = (c-pv)/pv*100;
+    const cls = ch>0?'pos':ch<0?'neg':'flat';
+    return `<div class="recap-row"><span>${a.alias}</span><span class="rv ${cls}">${ch>0?'▲':ch<0?'▼':'—'} ${Math.abs(ch).toFixed(2)}%</span></div>`;
+  }).join('');
+  const now = totalAssets();
+  const prev = G.cash + G.picks.reduce((s,a)=>s + G.pos[a.id].q*priceKRW(a,i-1), 0);
+  const d = prev > 0 ? (now-prev)/prev*100 : 0;
+  const tEl = document.getElementById('recapTotal');
+  tEl.textContent = prev > 0
+    ? `내 자산 ${d>=0?'+':''}${d.toFixed(2)}% · ${fmt(now)}`
+    : `내 자산 ${fmt(now)} (청산 상태)`;
+  tEl.className = 'recap-total ' + (d>0?'pos':d<0?'neg':'flat');
+  document.getElementById('recapOv').classList.add('show');
+  let n = 5;
+  document.getElementById('recapCnt').textContent = n;
+  clearInterval(recapTimer);
+  recapTimer = setInterval(()=>{ n--;
+    if (n<=0) hideRecap(); else document.getElementById('recapCnt').textContent = n; }, 1000);
+}
+function hideRecap(){ clearInterval(recapTimer); document.getElementById('recapOv').classList.remove('show'); }
+
+/* ════════════════════════════════════════════
+   10) 정산 — 순위 + 실명·날짜 공개
+   ════════════════════════════════════════════ */
+function showResult(room){
+  hideRecap(); stopDayTimer();
+  const endIdx = G.t0 + G.days - 1;
+  const tot = totalAssets(), diff = tot - G.cash0, pct = diff/G.cash0*100;
+  const d0 = DATES[G.t0], d1 = DATES[endIdx];
+  // 대결 순위
+  const rb = document.getElementById('rBattle');
+  if (room){
+    const ranks = Object.entries(room.players||{})
+      .map(([pid,p])=>({pid, name:p.name, total: typeof p.total==='number' ? p.total : room.cfg.cash}))
+      .sort((a,b)=>b.total-a.total);
+    const winner = ranks[0];
+    document.getElementById('rTitle').innerHTML =
+      winner.pid===PID ? '우승!<br><span class="amber">오늘의 여의도는 당신 것</span>'
+                       : `우승자는 <span class="amber">${winner.name}</span>`;
+    rb.innerHTML = ranks.map((r,i)=>{
+      const rp=(r.total-room.cfg.cash)/room.cfg.cash*100, cls=rp>0?'pos':rp<0?'neg':'flat';
+      return `<div class="rank ${i===0?'first':''}">
+        <span class="no">${i===0?'<span class="crown">👑</span>':i+1}</span>
+        <span class="nm">${r.name}${r.pid===PID?' <span style="color:var(--amber);font-size:11px">나</span>':''}</span>
+        <span><div class="pf ${cls}">${rp>=0?'+':''}${rp.toFixed(2)}%</div><div class="amt">${fmt(r.total)}</div></span></div>`;
+    }).join('');
+  } else {
+    rb.innerHTML = '';
+    document.getElementById('rTitle').innerHTML =
+      diff>0?'살아남았다.<br><span class="amber">수익 확정</span>':diff<0?'시장은 냉정했다.<br><span class="amber">손실 확정</span>':'본전.<br><span class="amber">무승부</span>';
+  }
+  // 내 성적
+  document.getElementById('rMine').innerHTML = `
+    <div class="big ${diff>0?'pos':diff<0?'neg':'flat'}">${pct>=0?'+':''}${pct.toFixed(2)}%</div>
+    <div class="cap">내 최종 자산 ${fmt(tot)} (${signed(diff,true)})</div>`;
+  document.getElementById('rDate').innerHTML =
+    `<b>날짜 공개</b> — 당신들이 있었던 곳은 <b>${fmtD(d0)} ~ ${fmtD(d1)}</b>이었습니다.` +
+    (G.event ? `<br><b>사건 공개</b> — 🔥 <b>${G.event.name}</b>의 한복판이었습니다.` : '');
+  // 종목 실명 공개 + 기간 성과 + 내 손익
+  document.getElementById('rList').innerHTML = G.picks.map(a=>{
+    const s=priceKRW(a,G.t0), e=priceKRW(a,endIdx), mv=(e-s)/s*100;
+    const p=G.pos[a.id], pnl=p.q?p.q*e-p.cost:null, cls=mv>0?'pos':mv<0?'neg':'flat';
+    return `<div class="rv-card">
+      <div class="rv-head"><span>${a.alias}</span><span class="rv-perf ${cls}">기간 ${mv>=0?'+':''}${mv.toFixed(2)}%</span></div>
+      <div class="rv-real">실명: ${a.real}</div>
+      <div class="rv-sub"><span>${fmt(s)} → ${fmt(e)}</span>
+        <span>${p.q?`${p.q<0?'숏 '+(-p.q):'보유 '+p.q}주 · ${signed(pnl,true)}`:'미보유'}</span></div></div>`;
+  }).join('');
+  if (roomRef){ roomRef.off(); roomRef=null; }
+  store.del('stm_room');
+  show('sResult');
+}
+
+/* ════════════════════════════════════════════
+   11) 초기화: 링크 파라미터 / 복귀 처리
+   ════════════════════════════════════════════ */
+function checkResume(){
+  const saved = store.get('stm_room');
+  document.getElementById('btnResume').style.display = saved ? 'block' : 'none';
+}
+function resumeRoom(){
+  const saved = JSON.parse(store.get('stm_room')||'null');
+  if (!saved) return;
+  if (needFb()) return;
+  document.getElementById('joinNick').value = saved.nick||'';
+  document.getElementById('joinCode').value = saved.code;
+  joinRoom();
+}
+(function init(){
+  tryInitFirebase();
+  checkResume();
+  const ci = document.getElementById('chatInput');
+  if (ci) ci.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat(); });
+  const lci = document.getElementById('lobbyChatInput');
+  if (lci) lci.addEventListener('keydown', e => { if (e.key === 'Enter') sendChat('lobbyChatInput'); });
+  const params = new URLSearchParams(location.search);
+  const room = params.get('room');
+  if (room){
+    document.getElementById('joinCode').value = room.toUpperCase();
+    if (!needFb()) show('sJoin');
+  }
+})();
+addEventListener('resize', ()=>{ if (G && document.getElementById('sGame').classList.contains('show')) renderAll(); });
+// 안전망: SDK 캐시를 우회해 REST로 서버의 '진짜' 상태를 직접 조회 (연결이 조용히 끊겨도 복구)
+async function pollRoom(){
+  if (!(MODE==='battle' && ROOM && G)) return;
+  if (document.getElementById('sResult').classList.contains('show')) return;   // 이미 정산 완료
+  const waiting = G.submitted || document.getElementById('sWait').classList.contains('show');
+  if (!waiting) return;
+  try{
+    const cfg = EMBEDDED_FB_CONFIG || JSON.parse(store.get('stm_fb')||'{}');
+    if (!cfg.databaseURL) return;
+    const res = await fetch(`${cfg.databaseURL}/rooms/${ROOM.code}.json`);
+    const room = await res.json();
+    if (room) onRoom(room);                          // 서버 원본 데이터로 상태 갱신
+  }catch(e){}
+}
+setInterval(pollRoom, 4000);
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) pollRoom(); });  // 화면 복귀 즉시 동기화
+</script>
+</body>
+</html>
